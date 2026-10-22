@@ -1,0 +1,23 @@
+{"kaynak": "OpenStreetMap (Nominatim) ve Kahramankart durak konumları, 2026-10-22",
+ "yerler": [
+  {"ad": "Ulu Cami", "tur": "cami", "lat": 37.58452, "lng": 36.92705},
+  {"ad": "Kahramanmaraş Kalesi", "tur": "tarih", "lat": 37.58718, "lng": 36.92539},
+  {"ad": "Kapalı Çarşı", "tur": "carsi", "lat": 37.58326, "lng": 36.92761},
+  {"ad": "Piazza AVM", "tur": "carsi", "lat": 37.57028, "lng": 36.92269},
+  {"ad": "EXPO 2023", "tur": "park", "lat": 37.60403, "lng": 36.78088},
+  {"ad": "Aliya İzzetbegoviç Parkı", "tur": "park", "lat": 37.58335, "lng": 36.88960},
+  {"ad": "Millet Bahçesi", "tur": "park", "lat": 37.57391, "lng": 36.91400},
+  {"ad": "Valilik Parkı", "tur": "park", "lat": 37.57934, "lng": 36.92984},
+  {"ad": "Çocuk Hastanesi", "tur": "hastane", "lat": 37.59405, "lng": 36.88344},
+  {"ad": "Necip Fazıl Şehir Hastanesi", "tur": "hastane", "lat": 37.50231, "lng": 37.00248},
+  {"ad": "Yörük Selim Devlet Hastanesi", "tur": "hastane", "lat": 37.59379, "lng": 36.92274},
+  {"ad": "KSÜ Tıp Fakültesi Hastanesi", "tur": "hastane", "lat": 37.58787, "lng": 36.82617},
+  {"ad": "KSÜ Avşar Kampüsü", "tur": "okul", "lat": 37.58855, "lng": 36.81891},
+  {"ad": "Otogar", "tur": "ulasim", "lat": 37.55260, "lng": 36.92170},
+  {"ad": "Havalimanı", "tur": "ucak", "lat": 37.53890, "lng": 36.95350},
+  {"ad": "Büyükşehir Belediyesi", "tur": "resmi", "lat": 37.57678, "lng": 36.92691},
+  {"ad": "Adalet Sarayı", "tur": "resmi", "lat": 37.59946, "lng": 36.83819},
+  {"ad": "Kahramanmaraş Müzesi", "tur": "kultur", "lat": 37.57313, "lng": 36.92588},
+  {"ad": "Yedi Güzel Adam Müzesi", "tur": "kultur", "lat": 37.59261, "lng": 36.92890},
+  {"ad": "Necip Fazıl Kültür Merkezi", "tur": "kultur", "lat": 37.58599, "lng": 36.89909}
+ ]}
