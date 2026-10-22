@@ -1,0 +1,12 @@
+<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent" android:layout_height="match_parent"
+    android:orientation="vertical" android:padding="16dp" android:background="#F7F8FA">
+    <TextView android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Maraş Ulaşım" android:textColor="#102E35" android:textStyle="bold" android:textSize="18sp" />
+    <TextView android:id="@+id/widget_lines" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:layout_weight="1" android:text="Favori hatlarını uygulamadan ekle." android:textColor="#102E35" android:textSize="15sp" android:paddingTop="8dp" />
+    <TextView android:id="@+id/widget_info" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Canlı konumlar için haritayı aç." android:textColor="#52676B" android:textSize="12sp" />
+    <Button android:id="@+id/widget_open" android:layout_width="match_parent" android:layout_height="wrap_content"
+        android:text="Haritayı aç" android:textAllCaps="false" />
+</LinearLayout>
