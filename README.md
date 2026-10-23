@@ -29,13 +29,15 @@
 
 <table>
   <tr>
-    <td align="center"><a href="docs/ekran/harita.png"><img src="docs/ekran/harita.png" width="220" alt="H/1 hattının haritadaki güzergâhı"></a></td>
-    <td align="center"><a href="docs/ekran/durak.png"><img src="docs/ekran/durak.png" width="220" alt="Durak menüsü ve Sadece favorilerim filtresi"></a></td>
-    <td align="center"><a href="docs/ekran/duraklar.png"><img src="docs/ekran/duraklar.png" width="220" alt="Haritaya yakından bakıldığında görünen turuncu durak işaretleri"></a></td>
-    <td align="center"><a href="docs/ekran/diger.png"><img src="docs/ekran/diger.png" width="220" alt="Duyurular, hatırlatmalar ve bağlantıların bulunduğu Diğer ekranı"></a></td>
+    <td align="center"><a href="docs/ekran/harita.png"><img src="docs/ekran/harita.png" width="170" alt="H/1 hattının güzergâhı ve canlı otobüsler"></a></td>
+    <td align="center"><a href="docs/ekran/araclar.png"><img src="docs/ekran/araclar.png" width="170" alt="H/1 hattında gidiş ve dönüşteki araç sayıları"></a></td>
+    <td align="center"><a href="docs/ekran/durak.png"><img src="docs/ekran/durak.png" width="170" alt="Durak menüsü ve Sadece favorilerim filtresi"></a></td>
+    <td align="center"><a href="docs/ekran/duraklar.png"><img src="docs/ekran/duraklar.png" width="170" alt="Haritaya yakından bakıldığında görünen turuncu durak işaretleri"></a></td>
+    <td align="center"><a href="docs/ekran/diger.png"><img src="docs/ekran/diger.png" width="170" alt="Duyurular, hatırlatmalar ve bağlantıların bulunduğu Diğer ekranı"></a></td>
   </tr>
   <tr>
-    <td align="center">H/1 hattı haritada</td>
+    <td align="center">Canlı otobüsler</td>
+    <td align="center">Gidiş ve dönüş araçları</td>
     <td align="center">Durak menüsü</td>
     <td align="center">Haritada duraklar</td>
     <td align="center">Diğer ekranı</td>
