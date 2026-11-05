@@ -10,6 +10,7 @@ import androidx.test.uiautomator.UiDevice
 import androidx.test.uiautomator.Until
 import com.uzaylikafasi.marasulasim.data.*
 import org.junit.Assert.*
+import kotlinx.coroutines.flow.first
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -76,6 +77,16 @@ class Release110Test {
         val apk=java.io.File(folder,"update.apk")
         try {
             java.io.File(context.applicationInfo.sourceDir).copyTo(apk,overwrite=true)
+            val flags=android.content.pm.PackageManager.GET_SIGNATURES or (if(android.os.Build.VERSION.SDK_INT>=28) android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES else 0)
+            val archive=context.packageManager.getPackageArchiveInfo(apk.absolutePath,flags)!!
+            val installed=context.packageManager.getPackageInfo(context.packageName,flags)
+            assertEquals("Arşiv paket adı",context.packageName,archive.packageName)
+            assertEquals("Arşiv sürümü",BuildConfig.VERSION_NAME,archive.versionName)
+            @Suppress("DEPRECATION")
+            fun certificates(info:android.content.pm.PackageInfo)=
+                if(android.os.Build.VERSION.SDK_INT>=28) info.signingInfo?.apkContentsSigners ?: info.signatures else info.signatures
+            assertFalse(certificates(archive).isNullOrEmpty())
+            assertArrayEquals("İmza sertifikaları",certificates(installed),certificates(archive))
             updater.verifyPackage(apk,BuildConfig.VERSION_NAME)
             assertTrue(runCatching { updater.verifyPackage(apk,"99.0.0") }.isFailure)
             val uri=androidx.core.content.FileProvider.getUriForFile(context,"${context.packageName}.files",apk)
@@ -133,6 +144,99 @@ class Release110Test {
         assertEquals("APK imzası veya sürümü uygulamayla eşleşmiyor.",failure!!.message)
         assertFalse(java.io.File(context.cacheDir,"updates/update.part.apk").exists())
         assertFalse(java.io.File(context.cacheDir,"updates/update.apk").exists())
+    }
+    @Test fun distantStopSearchFavoritesAndJourneyWorkAfterMapRangeChanges() = kotlinx.coroutines.runBlocking {
+        val app=context.applicationContext as TransportApplication
+        val stop=Stop(9304,"12141","OTOGAR HAREKET AMİRLİĞİ",37.55122,36.92099)
+        val original=app.store.settings.first().stops.any { it.id==stop.id }
+        fun click(text:String) { val node=device.wait(Until.findObject(By.text(text)),15_000);assertNotNull(text,node);node!!.click() }
+        fun search(code:String,name:String) {
+            val input=device.wait(Until.findObject(By.clazz("android.widget.EditText")),5_000)!!
+            input.click();input.text=code
+            assertTrue(device.wait(Until.hasObject(By.text(name)),20_000))
+            device.pressBack()
+            click(name)
+        }
+        try {
+            ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+                click("Ara");search("10111","DEMOKRASİ MEYDANI");click("Haritada")
+                Thread.sleep(1500) // Harita kamerası ve menzil kaynağı güncellensin.
+                assertTrue(distanceMeters(Coordinate(37.583,36.926),Coordinate(stop.latitude!!,stop.longitude!!))>750)
+                click("Ara");search("12141",stop.name)
+                if(!original) click("Favori")
+                device.findObject(By.desc("Kapat")).click();click("Favoriler");click(stop.name);click("Buradan")
+                assertTrue(device.wait(Until.hasObject(By.text(stop.name)),5_000))
+                click("Varış durağı seç");search("10111","DEMOKRASİ MEYDANI")
+                click("Rota bul")
+                var vm:com.uzaylikafasi.marasulasim.ui.TransportViewModel?=null
+                scenario.onActivity { vm=androidx.lifecycle.ViewModelProvider(it)[com.uzaylikafasi.marasulasim.ui.TransportViewModel::class.java] }
+                val deadline=System.currentTimeMillis()+25_000
+                while(System.currentTimeMillis()<deadline && vm!!.journey.value.loading) Thread.sleep(100)
+                assertNull(vm!!.journey.value.error)
+                val result=vm!!.journey.value.result
+                assertNotNull("Canlı yolculuk sonucu",result)
+                assertTrue(parseJourneys(result!!.objectData).isNotEmpty())
+            }
+        } finally {
+            val current=app.store.settings.first().stops.any { it.id==stop.id }
+            if(current!=original) app.store.toggleStop(stop)
+        }
+    }
+    @Test fun arrivalCardTrackingAndMinutePickerWorkTogether() = kotlinx.coroutines.runBlocking {
+        val app=context.applicationContext as TransportApplication
+        val settings=app.store.settings.first()
+        val before=ArrivalAlerts.list(context).map { it.id }.toSet()
+        val created=System.currentTimeMillis()
+        fun click(text:String) {
+            val node=device.wait(Until.findObject(By.text(text)),15_000)
+            if(node==null) {
+                device.dumpWindowHierarchy(java.io.File(context.filesDir,"ui-failure.xml"))
+                device.takeScreenshot(java.io.File(context.filesDir,"ui-failure.png"))
+                println("Dokunma başarısız: $text, paket=${device.currentPackageName}")
+            }
+            assertNotNull(text,node);node!!.click()
+        }
+        try {
+            app.store.setTrackOnTap(false);app.store.setFavoritesOnly(false)
+            ActivityScenario.launch(MainActivity::class.java).use {
+                click("Ara")
+                val search=device.wait(Until.findObject(By.clazz("android.widget.EditText")),5_000)!!
+                search.click();search.text="10111"
+                assertTrue(device.wait(Until.hasObject(By.text("DEMOKRASİ MEYDANI")),20_000))
+                device.pressBack();click("DEMOKRASİ MEYDANI")
+                var row:androidx.test.uiautomator.UiObject2?=null
+                for(attempt in 0..12) {
+                    row=device.findObject(By.textContains(" · 46"))
+                    if(row!=null && row.visibleBounds.height()>30 && row.visibleCenter.y in 400..1600) break
+                    row=null
+                    device.swipe(500,1650,500,650,20);Thread.sleep(300)
+                }
+                device.waitForIdle();Thread.sleep(750)
+                row=device.findObjects(By.textContains(" · 46")).firstOrNull { it.visibleBounds.height()>30 && it.visibleCenter.y in 400..1800 }
+                assertNotNull("Yaklaşan otobüs kartı",row);row!!.parent.click()
+                click("Haritada izle")
+                val info=device.wait(Until.findObject(By.desc("Otobüs bilgileri")),20_000)
+                assertNotNull("Takip bilgi düğmesi",info);info!!.click()
+                click("Varış uyarısı")
+                val minutes=device.wait(Until.findObject(By.clazz("android.widget.EditText")),5_000)!!
+                assertEquals("10",minutes.text);minutes.click();minutes.text="7";device.pressBack();device.waitForIdle()
+                click("Uyarı kur")
+                val savedBy=System.currentTimeMillis()+5_000
+                while(System.currentTimeMillis()<savedBy && ArrivalAlerts.list(context).none { it.createdAt>=created && it.minutes==7 }) Thread.sleep(100)
+                val saved=ArrivalAlerts.list(context).any { it.createdAt>=created && it.minutes==7 }
+                if(!saved) {
+                    device.dumpWindowHierarchy(java.io.File(context.filesDir,"ui-failure.xml"))
+                    device.takeScreenshot(java.io.File(context.filesDir,"ui-failure.png"))
+                }
+                assertTrue("Seçilen 7 dakika kaydedilmeli",saved)
+                device.pressBack();click("Diğer");click("Bildirimler")
+                assertTrue(device.wait(Until.hasObject(By.textContains("7 dk kala")),5_000))
+            }
+        } finally {
+            ArrivalAlerts.list(context).filter { it.id !in before }.forEach { ArrivalAlerts.remove(context,it.id) }
+            app.store.setTrackOnTap(settings.trackOnTap);app.store.setFavoritesOnly(settings.favoritesOnly)
+            context.stopService(Intent(context,ArrivalTrackingService::class.java))
+        }
     }
     @Test fun foregroundServiceExpiresAlertWithoutUsingPhoneGps() {
         assumeTrue("Bildirim izni gerekli",ArrivalAlerts.enabled(context))

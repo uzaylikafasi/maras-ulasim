@@ -114,11 +114,12 @@ class AppUpdates(private val context: Context) {
     @Suppress("DEPRECATION")
     internal fun verifyPackage(file: File, version: String) {
         val pm = context.packageManager
-        val flags = if(Build.VERSION.SDK_INT>=28) PackageManager.GET_SIGNING_CERTIFICATES else PackageManager.GET_SIGNATURES
+        // Bazı Android 9/10 cihazlar arşivde signingInfo alanını doldurmuyor.
+        val flags = PackageManager.GET_SIGNATURES or (if(Build.VERSION.SDK_INT>=28) PackageManager.GET_SIGNING_CERTIFICATES else 0)
         val apk = pm.getPackageArchiveInfo(file.absolutePath,flags) ?: error("APK okunamadı.")
         val installed = pm.getPackageInfo(context.packageName,flags)
         fun signatures(info: android.content.pm.PackageInfo): Set<String> =
-            (if(Build.VERSION.SDK_INT>=28) info.signingInfo?.apkContentsSigners else info.signatures).orEmpty().map { it.toCharsString() }.toSet()
+            (if(Build.VERSION.SDK_INT>=28) info.signingInfo?.apkContentsSigners ?: info.signatures else info.signatures).orEmpty().map { it.toCharsString() }.toSet()
         check(apk.packageName==context.packageName && apk.versionName==version &&
             signatures(apk).isNotEmpty() && signatures(apk)==signatures(installed)) { "APK imzası veya sürümü uygulamayla eşleşmiyor." }
     }
