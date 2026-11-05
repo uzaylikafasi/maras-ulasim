@@ -23,6 +23,10 @@ class StopRangeTest {
         assertEquals(emptyList<Stop>(), stopsInRange(listOf(near.copy(latitude=null)),center,750.0))
         assertEquals(30_000L,LOCATION_INTERVAL_MS)
     }
+    @Test fun invalidStopCoordinatesCannotCauseAnEndlessExpansion() {
+        assertTrue(stopsInRange(listOf(near.copy(latitude=Double.NaN)),center,750.0).isEmpty())
+        assertTrue(runCatching { stopsInRange(listOf(near),Coordinate(Double.NaN,36.9),750.0) }.isFailure)
+    }
     @Test fun realCatalogRenderingReducesFeaturesWithoutLosingSearchOrFavorites() {
         val file = listOf(File("src/main/assets/all-stops.json"),File("app/src/main/assets/all-stops.json")).first { it.exists() }
         val all = JSONObject(file.readText()).getJSONArray("stops").objects().map { Stop(it.getLong("id"),it.optString("code"),it.optString("name"),it.getDouble("lat"),it.getDouble("lng")) }
