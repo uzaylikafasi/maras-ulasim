@@ -78,7 +78,13 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
         var focusedStop by rememberSaveable(stateSaver = stopSaver) { mutableStateOf<Stop?>(null) }
         var openedStop by remember { mutableStateOf<Stop?>(null) }
         var openedLine by remember { mutableStateOf<Line?>(null) }
+        var openedArrival by remember { mutableStateOf<Pair<Stop, Arrival>?>(null) }
+        var choosingOrigin by rememberSaveable { mutableStateOf<Boolean?>(null) }
         var openedVehicle by remember { mutableStateOf<Pair<Line, Vehicle>?>(null) }
+        val journeyNow = ZonedDateTime.now(ZoneId.of("Europe/Istanbul"))
+        var journeyHour by rememberSaveable { mutableIntStateOf(journeyNow.hour) }
+        var journeyMinute by rememberSaveable { mutableIntStateOf(journeyNow.minute) }
+        var journeyDay by rememberSaveable { mutableIntStateOf(journeyNow.dayOfWeek.value % 7) }
         var origin by rememberSaveable(stateSaver = stopSaver) { mutableStateOf<Stop?>(null) }
         var destination by rememberSaveable(stateSaver = stopSaver) { mutableStateOf<Stop?>(null) }
         var sheet by rememberSaveable { mutableStateOf<String?>(null) }
@@ -96,7 +102,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
         LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.dismissMessage() } }
         val openStop: (Stop) -> Unit = { openedStop = it; vm.stopDetails(it) }
         // Geri tuşu diğer sekmelerde önce haritaya döner; uygulama yalnız haritadayken kapanır
-        BackHandler(enabled = tab != 0) { tab = 0 }
+        BackHandler(enabled = tab != 0) { choosingOrigin = null; tab = 0 }
         LaunchedEffect(openedLine) { openedLine?.let { if (snapshots[it.key]?.stops == null) vm.lineStops(it) } }
         val names = listOf("Harita", "Ara", "Yolculuk", "Favoriler", "Diğer")
         val icons = listOf(Icons.Outlined.Map, Icons.Outlined.Search, Icons.Outlined.Route, Icons.Outlined.StarOutline, Icons.Outlined.MoreHoriz)
@@ -109,7 +115,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
             })
         }, bottomBar = {
             NavigationBar {
-                names.forEachIndexed { index, name -> NavigationBarItem(selected = tab == index, onClick = { tab = index },
+                names.forEachIndexed { index, name -> NavigationBarItem(selected = tab == index, onClick = { choosingOrigin = null; tab = index },
                     icon = { Icon(icons[index], name) }, label = { Text(name) }) }
             }
         }) { padding ->
@@ -121,11 +127,20 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                         onNearby = { nearbyTitle = null; sheet = "nearby"; vm.prepareNearby(); onNearby() }, onLocate = onLocate,
                         onPlace = { name, at -> nearbyTitle = name; sheet = "nearby"; vm.nearby(at.latitude, at.longitude) })
                     1 -> SearchScreen(query, onQuery = { query = it; vm.search(it) }, search, settings, vm::favorite, vm::favorite,
-                        openStop, onSelect = vm::select, onLine = { openedLine = it }, onNearby = { nearbyTitle = null; sheet = "nearby"; vm.prepareNearby(); onNearby() })
-                    2 -> JourneyScreen(origin, destination, journey,
-                        onChoose = { tab = 1; vm.notify("Bir durak ara; durak ayrıntısından Buradan veya Buraya seç.") },
-                        onSwap = { val old = origin; origin = destination; destination = old },
-                        onPlan = { path -> vm.plan(path) })
+                        { stop ->
+                            val choosing = choosingOrigin
+                            if (choosing == null) openStop(stop) else {
+                                if (choosing) origin = stop else destination = stop
+                                choosingOrigin = null; vm.clearJourney(); tab = 2
+                            }
+                        }, onSelect = vm::select, onLine = { openedLine = it }, onNearby = { nearbyTitle = null; sheet = "nearby"; vm.prepareNearby(); onNearby() },
+                        choosing = choosingOrigin?.let { if (it) "Başlangıç durağını seç" else "Varış durağını seç" })
+                    2 -> JourneyScreen(origin, destination, journey, journeyDay, journeyHour, journeyMinute,
+                        onChoose = { from -> choosingOrigin = from; query = ""; vm.search(""); tab = 1 },
+                        onSwap = { val old = origin; origin = destination; destination = old; vm.clearJourney() },
+                        onPlan = { path -> vm.plan(path) },
+                        onDay = { journeyDay = it; vm.clearJourney() },
+                        onTime = { h, m -> journeyHour = h; journeyMinute = m; vm.clearJourney() })
                     3 -> FavoritesScreen(settings, vm::favorite, vm::favorite, vm::favoritePlate, vm::select, openStop, onLine = { openedLine = it },
                         onSearch = { tab = 1 })
                     else -> MoreScreen(onSheet = { sheet = it; if (it == "announcements") vm.extra("/v1/announcements") })
@@ -152,8 +167,8 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                         QuickAction(if (fav) Icons.Outlined.Star else Icons.Outlined.StarOutline, if (fav) "Favoride" else "Favori", Modifier.weight(1f), fav) { vm.favorite(stop) }
                         QuickAction(Icons.Outlined.Map, "Haritada", Modifier.weight(1f)) { focusedStop = stop; tab = 0; openedStop = null }
-                        QuickAction(Icons.Outlined.TripOrigin, "Buradan", Modifier.weight(1f)) { origin = stop; tab = 2; openedStop = null }
-                        QuickAction(Icons.Outlined.Flag, "Buraya", Modifier.weight(1f)) { destination = stop; tab = 2; openedStop = null }
+                        QuickAction(Icons.Outlined.TripOrigin, "Buradan", Modifier.weight(1f)) { origin = stop; vm.clearJourney(); tab = 2; openedStop = null }
+                        QuickAction(Icons.Outlined.Flag, "Buraya", Modifier.weight(1f)) { destination = stop; vm.clearJourney(); tab = 2; openedStop = null }
                     }
                     stopLines[stop.id]?.let { codes ->
                         Text("Bu durağa uğrayan hatlar", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
@@ -203,7 +218,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                         }.sortedBy { (a, between, lights) -> secondsOf(a)?.let { it + padSeconds(between, settings.stopPad, lights, settings.lightPad) } ?: Int.MAX_VALUE }
                         rows.forEachIndexed { index, (arrival, between, lights) -> AnimatedListItem(index) {
                             ArrivalCard(arrival, between, lights, vm.lightLearner.waitingAtLight(arrival.plate, now), settings,
-                                track?.takeIf { arrival.plate.isNotBlank() }?.let { t -> { t(arrival) } })
+                                { if (settings.trackOnTap && arrival.plate.isNotBlank()) track?.invoke(arrival) else openedArrival = stop to arrival })
                         } }
                         Freshness(result)
                         if (arrivals.isNotEmpty()) Text(if (settings.trackOnTap) "Süreler kaynağın tahminidir. Otobüse dokun, haritada izle." else "Süreler kaynağın tahminidir.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -211,10 +226,21 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                 }
             }
         }
+        openedArrival?.let { (stop, arrival) ->
+            AlertDialog(onDismissRequest = { openedArrival = null }, title = { Text("${arrival.code} · ${arrival.plate.ifBlank { "Plaka bildirilmedi" }}") },
+                text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    arrivalDetails(stop, arrival).forEach { Text(it) }
+                    Text("Süreler kaynağın tahminidir.", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { vm.track(arrival, stop); tab = 0; openedStop = null; openedArrival = null; vm.clearDetail() }) { Text("Haritada izle") }
+                } }, confirmButton = { TextButton(onClick = { openedArrival = null }) { Text("Kapat") } })
+        }
         openedVehicle?.let { (line, vehicle) ->
             AlertDialog(onDismissRequest = { openedVehicle = null }, title = { Text("${line.code} · ${vehicle.plate}") },
                 text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(line.directionName)
+                    tracked?.takeIf { it.plate == vehicle.plate }?.let { t ->
+                        TextButton(onClick = { openedVehicle = null; openedArrival = t.stop to Arrival(line.code, vehicle.plate, "Süre belirtilmedi", vehicle.nextStop, lineId = line.id.toString()) }) { Text("Durak bilgileri") }
+                    }
                     Text("Sonraki durak: ${vehicle.nextStop.ifBlank { "Bildirilmedi" }}")
                     OutlinedButton(onClick = { vm.favoritePlate(vehicle.plate) }) {
                         Icon(if (vehicle.plate in settings.plates) Icons.Outlined.Star else Icons.Outlined.StarOutline, null)
@@ -492,7 +518,7 @@ private fun LineBadgeButton(code: String, favorite: Boolean = false, onLongClick
 private fun ArrivalCard(arrival: Arrival, stopsBetween: Int? = null, lightsAhead: Int = 0, waitingAtLight: Boolean = false,
                         settings: Settings = Settings(), onClick: (() -> Unit)? = null) {
     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant,
-        modifier = Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clip(RoundedCornerShape(18.dp)).clickable(onClickLabel = "Haritada izle", onClick = onClick) else Modifier)) {
+        modifier = Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clip(RoundedCornerShape(18.dp)).clickable(onClickLabel = "Otobüs bilgileri", onClick = onClick) else Modifier)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(12.dp), color = hex(badgeColorFor(arrival.code)), contentColor = Color.White) {
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -580,11 +606,12 @@ private fun SmallBadge(text: String, color: Color) {
 @Composable
 private fun SearchScreen(query: String, onQuery: (String) -> Unit, state: LoadState, settings: Settings,
                          onFavoriteLine: (Line) -> Unit, onFavoriteStop: (Stop) -> Unit, onStop: (Stop) -> Unit,
-                         onSelect: (Line) -> Unit, onLine: (Line) -> Unit, onNearby: () -> Unit) {
+                         onSelect: (Line) -> Unit, onLine: (Line) -> Unit, onNearby: () -> Unit, choosing: String? = null) {
     var filter by rememberSaveable { mutableIntStateOf(0) }
     val results = runCatching { state.result?.objectData?.let(::parseSearch) }.getOrNull()
     LazyColumn(Modifier.fillMaxSize().padding(horizontal = 16.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
+            choosing?.let { Text(it, style = MaterialTheme.typography.titleMedium) }
             OutlinedTextField(query, onValueChange = onQuery, modifier = Modifier.fillMaxWidth(), singleLine = true,
                 label = { Text("Hat, durak adı veya numarası") }, leadingIcon = { Icon(Icons.Outlined.Search, null) },
                 trailingIcon = { if (query.isNotEmpty()) IconButton(onClick = { onQuery("") }) { Icon(Icons.Outlined.Close, "Aramayı temizle") } })
@@ -752,42 +779,39 @@ private fun Freshness(result: ApiResult) {
 }
 
 @Composable
-private fun JourneyScreen(origin: Stop?, destination: Stop?, state: LoadState, onChoose: () -> Unit,
-                          onSwap: () -> Unit, onPlan: (String) -> Unit) {
+private fun JourneyScreen(origin: Stop?, destination: Stop?, state: LoadState, day: Int, hour: Int, minute: Int,
+                          onChoose: (Boolean) -> Unit, onSwap: () -> Unit, onPlan: (String) -> Unit,
+                          onDay: (Int) -> Unit, onTime: (Int, Int) -> Unit) {
     val context = LocalContext.current
-    val now = ZonedDateTime.now(ZoneId.of("Europe/Istanbul"))
-    var hour by rememberSaveable { mutableIntStateOf(now.hour) }
-    var minute by rememberSaveable { mutableIntStateOf(now.minute) }
-    var day by rememberSaveable { mutableIntStateOf(now.dayOfWeek.value % 7) }
     LazyColumn(Modifier.padding(horizontal = 16.dp).fillMaxSize(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
         item {
             Text("Nasıl giderim?", style = MaterialTheme.typography.headlineSmall)
-            OutlinedCard(onClick = onChoose, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
+            OutlinedCard(onClick = { onChoose(true) }, modifier = Modifier.fillMaxWidth().padding(top = 16.dp)) {
                 Column(Modifier.padding(16.dp)) { Text("Başlangıç", style = MaterialTheme.typography.labelMedium); Text(origin?.name ?: "Başlangıç durağı seç") }
             }
             Box(Modifier.fillMaxWidth()) { IconButton(onClick = onSwap, modifier = Modifier.align(Alignment.CenterEnd)) { Icon(Icons.Outlined.SwapVert, "Başlangıç ve varışı değiştir") } }
-            OutlinedCard(onClick = onChoose, modifier = Modifier.fillMaxWidth()) {
+            OutlinedCard(onClick = { onChoose(false) }, modifier = Modifier.fillMaxWidth()) {
                 Column(Modifier.padding(16.dp)) { Text("Varış", style = MaterialTheme.typography.labelMedium); Text(destination?.name ?: "Varış durağı seç") }
             }
         }
         item {
             LazyRow(horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 val days = listOf("Pzt", "Sal", "Çar", "Per", "Cum", "Cmt", "Paz")
-                items(7) { index -> val value = (index + 1) % 7; FilterChip(day == value, { day = value }, { Text(days[index]) }) }
+                items(7) { index -> val value = (index + 1) % 7; FilterChip(day == value, { onDay(value) }, { Text(days[index]) }) }
             }
-            OutlinedButton(onClick = { TimePickerDialog(context, { _, h, m -> hour = h; minute = m }, hour, minute, true).show() }) {
+            OutlinedButton(onClick = { TimePickerDialog(context, { _, h, m -> onTime(h, m) }, hour, minute, true).show() }) {
                 Icon(Icons.Outlined.Schedule, null); Text(String.format(Locale.ROOT, " %02d:%02d", hour, minute))
             }
             Text("Seçilen gün ve saate ait tarifeyle planlanır. Canlı varış garantisi vermez.", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
         }
         item {
-            Button(onClick = { if (origin != null && destination != null) onPlan("/v1/journeys?from_stop_id=${origin.id}&to_stop_id=${destination.id}&day=$day&hour=$hour&minute=$minute") },
+            Button(onClick = { if (origin != null && destination != null) onPlan(journeyPath(origin, destination, day, hour, minute)) },
                 enabled = origin != null && destination != null && origin.id != destination.id && !state.loading, modifier = Modifier.fillMaxWidth()) { Text("Rota bul") }
             StateNotice(state)
         }
         state.result?.let { result ->
             item { Freshness(result) }
-            val routes = runCatching { result.objectData.requiredArray("data").objects().map(::parseJourneyRoute) }.getOrDefault(emptyList())
+            val routes = parseJourneys(result.objectData)
             if (routes.isEmpty()) item { Text("Bu seçim için rota bulunamadı.") }
             items(routes) { route -> RouteCard(route) }
         }

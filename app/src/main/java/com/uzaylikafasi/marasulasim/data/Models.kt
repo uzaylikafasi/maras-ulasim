@@ -18,10 +18,11 @@ data class Stop(val id: Long, val code: String, val name: String, val latitude: 
         .put("latitude", latitude).put("longitude", longitude)
 }
 data class Coordinate(val latitude: Double, val longitude: Double)
-data class Vehicle(val plate: String, val coordinate: Coordinate, val nextStop: String, val angle: Double? = null, val speed: Double? = null)
-data class Arrival(val code: String, val plate: String, val remaining: String, val nextStop: String, val distance: String = "", val seconds: Int? = null,
-                   val lineId: String = "", val nextStopId: Long = 0)
-/** Kaynak, Google Haritalar'daki araç sürüş süresini verir (duraklarda durmaz): her ara durak için bu kadar saniye eklenir. */
+data class Vehicle(val plate: String, val coordinate: Coordinate, val nextStop: String, val angle: Double? = null,
+                   val previousStopId: Long? = null, val nextStopId: Long? = null, val speed: Double? = null)
+data class Arrival(val code: String, val plate: String, val remaining: String, val nextStop: String, val distance: String = "",
+                   val name: String = "", val direction: String = "", val state: String = "", val seconds: Int? = null, val lineId: String = "", val nextStopId: Long = 0)
+/** Ölçülmemiş durak payı; kullanıcı seçerse kaynak tahmine eklenir. */
 const val SECONDS_PER_STOP = 15
 /** Kaynak süreye eklenecek pay (sn): ara durak başına [SECONDS_PER_STOP], yoldaki ışık başına [LIGHT_WAIT_SECONDS]. */
 fun padSeconds(stopsBetween: Int?, stopPad: Boolean, lights: Int, lightPad: Boolean): Int =
@@ -45,13 +46,15 @@ fun parseVehicles(a: JSONArray): List<Vehicle> = a.objects().mapNotNull { o ->
     if (plate.isBlank() || !lat.isFinite() || !lon.isFinite() || lat !in -90.0..90.0 || lon !in -180.0..180.0 || (lat == 0.0 && lon == 0.0)) null
     else Vehicle(plate, Coordinate(lat, lon), o.optString("nextStopName"),
         o.optDouble("directionAngle", Double.NaN).takeIf { it.isFinite() && it in 0.0..360.0 },
+        o.optLong("previousStopId").takeIf { it > 0 }, o.optLong("nextStopId").takeIf { it > 0 },
         o.optDouble("speed", Double.NaN).takeIf { it.isFinite() && it >= 0 })
 }
 fun parseArrivals(a: JSONArray): List<Arrival> = a.objects().map { o ->
     Arrival(o.optString("busCode"), o.optString("plate"),
         o.optString("remaining_time").takeIf { it.isNotBlank() && it != "null" } ?: "Süre belirtilmedi",
         o.optString("nextStopName"), o.optString("remaining_distance").takeIf { it.isNotBlank() && it != "null" }.orEmpty(),
-        o.optInt("timeToStop", -1).takeIf { it >= 0 }, o.optString("lineId"), o.optLong("nextStopId", 0))
+        o.optString("busName"), o.optString("directionName"), o.optString("state"),
+        o.optInt("timeToStop", -1).takeIf { !o.isNull("timeToStop") && it >= 0 }, o.optString("lineId"), o.optLong("nextStopId", 0))
 }
 data class SearchResults(val lines: List<Line>, val stops: List<Stop>)
 data class ApiResult(val data: Any, val fetchedAt: String?, val stale: Boolean = false,
@@ -170,3 +173,27 @@ fun lineColorFor(code: String, codes: List<String>): String = lineColors[(codes.
 fun Settings.visibleCodes(): List<String> = mapLines.filter { it.key in selected }.map { it.code }.distinct()
 fun Settings.isOnMap(code: String): Boolean = mapLines.any { it.code == code && it.key in selected }
 
+
+/** A missing collection is a schema error, not a successful empty journey. */
+fun parseJourneys(o: JSONObject): List<JourneyRoute> {
+    val error = o.optJSONObject("error")
+    if (error != null && error.optInt("code", 0) != 0) throw DataException("Rota servisi sorguyu tamamlayamadı. Yeniden dene.")
+    return o.requiredArray("data").objects().map { route ->
+        if (route.requiredArray("Lags").length() == 0) throw DataException("Rota adımları okunamadı.")
+        parseJourneyRoute(route)
+    }
+}
+
+fun journeyPath(origin: Stop, destination: Stop, day: Int, hour: Int, minute: Int): String {
+    require(origin.id != destination.id && day in 0..6 && hour in 0..23 && minute in 0..59)
+    return "/v1/journeys?from_stop_id=${origin.id}&to_stop_id=${destination.id}&day=$day&hour=$hour&minute=$minute"
+}
+
+fun arrivalDetails(stop: Stop, arrival: Arrival): List<String> = listOf(
+    "Hat: ${arrival.code} · ${arrival.name.ifBlank { "Adı bildirilmedi" }}",
+    "Yön: ${arrival.direction.ifBlank { "Bildirilmedi" }}",
+    "Plaka: ${arrival.plate.ifBlank { "Bildirilmedi" }}",
+    "${stop.name} durağına: ${arrival.remaining}",
+    "Uzaklık: ${arrival.distance.ifBlank { "Bildirilmedi" }}",
+    "Sonraki durak: ${arrival.nextStop.ifBlank { "Bildirilmedi" }}"
+) + listOfNotNull(arrival.state.takeIf { it.isNotBlank() })
