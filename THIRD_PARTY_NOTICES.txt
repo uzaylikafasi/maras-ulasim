@@ -41,6 +41,6 @@ Kotlin / kotlinx.coroutines: Apache License 2.0
 https://github.com/JetBrains/kotlin
 OkHttp: Apache License 2.0
 https://square.github.io/okhttp/
-Harita verisi: © OpenStreetMap contributors (ODbL)
+Harita verisi ve gömülü kavşak/ışık noktaları (app/src/main/assets/isiklar.json): © OpenStreetMap contributors (ODbL)
 https://www.openstreetmap.org/copyright
 OpenFreeMap / OpenMapTiles: harita içindeki atıf bağlantıları.

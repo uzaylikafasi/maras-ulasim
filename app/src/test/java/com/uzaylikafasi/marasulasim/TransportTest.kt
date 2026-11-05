@@ -243,4 +243,52 @@ class TransportTest {
         assertEquals("BİNEVLER", com.uzaylikafasi.marasulasim.ui.destinationOf(Line(910, 1, "H/10", "K. SANAYİ - BİNEVLER (Gidiş)", "Gidiş")))
         assertEquals("Dönüş", com.uzaylikafasi.marasulasim.ui.destinationOf(Line(1, 2, "H/1", "", "Dönüş")))
     }
+    @Test fun `stops between uses line order`() {
+        val line = listOf(10L, 11L, 12L, 13L, 14L)
+        assertEquals(3, stopsBetween(line, 11, 14)); assertEquals(0, stopsBetween(line, 14, 14))
+        assertEquals(null, stopsBetween(line, 14, 11)); assertEquals(null, stopsBetween(line, 99, 14)); assertEquals(null, stopsBetween(null, 11, 14))
+        val a = parseArrivals(org.json.JSONArray("""[{"busCode":"H/11","plate":"P","lineId":"911","nextStopId":6826,"remaining_time":"1 dk 34 sn","timeToStop":94}]"""))
+        assertEquals("911", a.single().lineId); assertEquals(6826L, a.single().nextStopId)
+    }
+    @Test fun `each stop in between adds fifteen seconds`() {
+        val a = parseArrivals(org.json.JSONArray("""[{"busCode":"H/1","plate":"P","remaining_time":"1 dk 21 sn","timeToStop":81},{"busCode":"H/2","plate":"Q","remaining_time":"4 dk"}]"""))
+        assertEquals(81, secondsOf(a[0])); assertEquals(240, secondsOf(a[1]))
+        assertEquals("2 dk 6 sn", formatDuration(81 + 3 * SECONDS_PER_STOP))
+        assertEquals("5 dk", formatDuration(300)); assertEquals("45 sn", formatDuration(45))
+    }
+    @Test fun `bus stopped away from stops five times becomes a light`() {
+        val stop = Coordinate(37.5800, 36.9300)
+        val spot = Coordinate(37.5830, 36.9300)            // duraktan ~330 m
+        val l = LightLearner(emptyList(), emptyList(), listOf(stop))
+        var t = 0L
+        repeat(5) { i ->
+            val plate = "P$i"
+            assertEquals(false, l.observe(plate, spot, 0.0, t))
+            assertEquals(false, l.observe(plate, spot, 0.0, t + 3_000))   // 5 sn dolmadı: yol verme sayılmaz
+            assertEquals(true, l.observe(plate, spot, 0.0, t + 10_000))
+            assertEquals(false, l.observe(plate, spot, 0.0, t + 20_000))  // aynı duruş bir kez sayılır
+            if (i < 4) assertEquals(0, l.lights().size)
+            t += 300_000
+        }
+        assertEquals(1, l.lights().size)
+        assertEquals(1, l.lightsAlong(listOf(Coordinate(37.5820, 36.9300), Coordinate(37.5840, 36.9300))))
+        assertEquals(0, l.lightsAlong(listOf(Coordinate(37.5820, 36.9320), Coordinate(37.5840, 36.9320))))
+    }
+    @Test fun `stops at bus stops and moving buses are not lights`() {
+        val stop = Coordinate(37.5800, 36.9300)
+        val l = LightLearner(emptyList(), emptyList(), listOf(stop))
+        repeat(6) { i -> l.observe("D$i", stop, 0.0, i * 300_000L); assertEquals(false, l.observe("D$i", stop, 0.0, i * 300_000L + 10_000)) }
+        val far = Coordinate(37.5900, 36.9300)
+        l.observe("M", far, 30.0, 0); assertEquals(false, l.observe("M", far, 30.0, 10_000))
+        assertEquals(0, l.lights().size)
+    }
+    @Test fun `junction needs only two stops and osm signals count once`() {
+        val junction = Coordinate(37.5830, 36.9300)
+        val l = LightLearner(listOf(Coordinate(37.6000, 36.9000), Coordinate(37.60005, 36.90005)), listOf(junction), emptyList())
+        assertEquals(1, l.lights().size)                      // aynı kavşağın iki ışığı tek
+        repeat(2) { i -> l.observe("J$i", junction, 0.0, i * 300_000L); l.observe("J$i", junction, 0.0, i * 300_000L + 10_000) }
+        assertEquals(2, l.lights().size)
+        assertEquals(true, l.waitingAtLight("J1", 300_000L + 12_000))
+        assertEquals(40, padSeconds(null, true, 2, true)); assertEquals(30 + 40, padSeconds(2, true, 2, true)); assertEquals(30, padSeconds(2, true, 2, false))
+    }
 }

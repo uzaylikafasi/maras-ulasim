@@ -13,6 +13,15 @@ import org.json.JSONObject
 
 data class LineSnapshot(val line: Line, val shape: ApiResult? = null, val stops: ApiResult? = null,
                         val vehicles: ApiResult? = null, val error: String? = null)
+/** Duraktan seçilen tek otobüs: haritada yalnız o görünür ve kamera onu izler. */
+data class TrackedBus(val line: Line, val plate: String, val stop: Stop, val vehicles: ApiResult? = null, val error: String? = null) {
+    val key get() = "${line.id}:$plate"
+    /** Haritaya verilen tek hatlık görünüm: güzergâh ve hat durakları yok, yalnız bu plaka. */
+    fun snapshot(): LineSnapshot = LineSnapshot(line, vehicles = vehicles?.let { r ->
+        runCatching { r.copy(data = org.json.JSONArray(r.arrayData.objects().filter { it.optString("plate") == plate })) }.getOrNull()
+    })
+    fun vehicle(): Vehicle? = runCatching { vehicles?.arrayData?.let(::parseVehicles)?.firstOrNull { it.plate == plate } }.getOrNull()
+}
 data class LoadState(val loading: Boolean = false, val result: ApiResult? = null, val error: String? = null)
 
 class TransportViewModel(application: Application) : AndroidViewModel(application) {
@@ -76,6 +85,39 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     fun removeFromMap(line: Line) = action { app.store.removeFromMap(line) }
     fun showVehicles(show: Boolean) = action { app.store.setShowVehicles(show) }
     fun favoritesOnly(value: Boolean) = action { app.store.setFavoritesOnly(value) }
+    fun stopPad(value: Boolean) = action { app.store.setStopPad(value) }
+    fun lightPad(value: Boolean) = action { app.store.setLightPad(value) }
+    val lightLearner get() = app.lights.learner
+    /** Canlı konumlardan ışık öğrenme (durak dışında duran otobüsler); disk işi IO'da. */
+    private val learnedAt = mutableMapOf<String, String>()
+    private suspend fun learn(path: String, result: ApiResult?) {
+        // Sunucu önbelleğinden gelen aynı ölçüm, otobüsü yanlışlıkla "duruyor" gösterir: aynı zaman damgası bir kez sayılır
+        val at = result?.fetchedAt ?: return
+        if (result.stale || learnedAt.put(path, at) == at) return
+        val vehicles = runCatching { result.arrayData.let(::parseVehicles) }.getOrNull() ?: return
+        withContext(Dispatchers.Default) { app.lights.observe(vehicles) }
+    }
+    fun trackOnTap(value: Boolean) = action { app.store.setTrackOnTap(value) }
+    private val _tracked = MutableStateFlow<TrackedBus?>(null)
+    val tracked = _tracked.asStateFlow()
+    /** Yaklaşan otobüse dokununca: hat kodu ve gidilen durakla o plaka izlenir. */
+    fun track(arrival: Arrival, stop: Stop) {
+        val id = arrival.lineId.toLongOrNull() ?: return notify("Bu otobüsün hattı bildirilmedi, izlenemiyor.")
+        _tracked.value = TrackedBus(Line(id, 1, arrival.code, "", stop.name), arrival.plate, stop)
+    }
+    fun stopTracking() { _tracked.value = null }
+    suspend fun watchTracked() {
+        while (currentCoroutineContext().isActive) {
+            val t = _tracked.value ?: return
+            val s = settings.value
+            val path = "/v1/lines/${t.line.id}/vehicles?direction=1"
+            val r = load(path, s, live = true)
+            learn(path, r.result)
+            _tracked.update { if (it?.key != t.key) it else it.copy(vehicles = r.result ?: it.vehicles, error = r.error
+                ?: if (r.result != null && TrackedBus(t.line, t.plate, t.stop, r.result).vehicle() == null) "Otobüs şu an konum bildirmiyor." else null) }
+            delay(10_000)
+        }
+    }
     /** Hat numarasını favorile/çıkar (durak menüsünde rozete uzun basınca). Hat aramadan bulunur. */
     fun favoriteCode(code: String) = action {
         val s = settings.value
@@ -101,11 +143,34 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
         catch (e: CancellationException) { throw e }
         catch (e: Exception) { LoadState(error = e.message ?: "Veri alınamadı. Yeniden dene.") }
     }
+    private val _lineStopIds = MutableStateFlow<Map<String, List<Stop>>>(emptyMap())
+    /** Hat kimliği (lineId) -> hattın durakları, sıralı. Yenileme sırasında kesilmesin diye hat hat, kademeli dolar. */
+    val lineStopIds = _lineStopIds.asStateFlow()
+    private val _stopVehicles = MutableStateFlow<Map<String, Vehicle>>(emptyMap())
+    /** Açık duraktaki yaklaşan otobüslerin canlı konumu (plaka -> araç): yol üstündeki ışıklar ve "ışıkta bekliyor". */
+    val stopVehicles = _stopVehicles.asStateFlow()
+    private val lineStopsLoading = mutableSetOf<String>()
+    fun prefetchLineStops(lineIds: Collection<String>) {
+        val todo = lineIds.filter { it.isNotBlank() && it !in _lineStopIds.value && lineStopsLoading.add(it) }
+        if (todo.isEmpty()) return
+        viewModelScope.launch {
+            val s = settings.value
+            todo.chunked(4).forEach { batch -> coroutineScope { batch.map { id -> async {
+                try {
+                    val raw = withContext(Dispatchers.IO) { repository.fetch(s.server, s.apiKey, "/v1/lines/$id/stops?direction=1") }.objectData
+                    val ids = raw.requiredArray("lineStops").objects().sortedBy { it.optInt("sequenceNo", 0) }.mapNotNull { runCatching { parseStop(it) }.getOrNull() }
+                    _lineStopIds.update { it + (id to ids) }
+                } catch (e: CancellationException) { throw e }
+                catch (e: Exception) { /* sonraki yenilemede yeniden denenir */ }
+                finally { lineStopsLoading.remove(id) }
+            } }.awaitAll() } }
+        }
+    }
     fun stopDetails(stop: Stop) {
         detailJob?.cancel(); _detail.value = LoadState(true)
-        detailJob = viewModelScope.launch { _detail.value = load("/v1/stops/${stop.id}", live = true) }
+        detailJob = viewModelScope.launch { _detail.value = load("/v1/stops/${stop.id}", live = true); stopVehicles() }
     }
-    fun clearDetail() { detailJob?.cancel(); _detail.value = LoadState() }
+    fun clearDetail() { detailJob?.cancel(); _detail.value = LoadState(); _stopVehicles.value = emptyMap() }
     /** Haritada olmayan bir hattın durakları (aramadan açılan hat sayfası için). Önce kayıtlı kopya gösterilir. */
     fun lineStops(line: Line) {
         lineStopsJob?.cancel()
@@ -131,8 +196,23 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
         delay(15_000)
         while (currentCoroutineContext().isActive) {
             _detail.value = load("/v1/stops/${stop.id}", live = true)
+            stopVehicles()
             delay(15_000)
         }
+    }
+    /** Yaklaşan otobüslerin hatlarının canlı konumları (en çok 6 hat, ikişer ikişer). */
+    private suspend fun stopVehicles() {
+        val arrivals = runCatching { _detail.value.result?.objectData?.requiredArray("buses")?.let(::parseArrivals) }.getOrNull().orEmpty()
+        val plates = arrivals.map { it.plate }.toSet()
+        val s = settings.value
+        val found = mutableMapOf<String, Vehicle>()
+        arrivals.map { it.lineId }.filter { it.isNotBlank() }.distinct().take(6).chunked(2).forEach { batch -> coroutineScope { batch.map { id -> async {
+            val path = "/v1/lines/$id/vehicles?direction=1"
+            val r = load(path, s, live = true)
+            learn(path, r.result)
+            runCatching { r.result?.arrayData?.let(::parseVehicles) }.getOrNull().orEmpty().filter { it.plate in plates }
+        } }.awaitAll().flatten().forEach { found[it.plate] = it } } }
+        _stopVehicles.value = found
     }
     fun refresh() {
         if (manualRefresh?.isActive == true || refreshMutex.isLocked) return
@@ -171,8 +251,10 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
                 _snapshots.update { it + (line.key to current) }
             }
             // Araçlar gizliyse canlı sorgu yapılmaz (kaynağı ve pili boşuna yormasın)
-            val vehicles = if (s.showVehicles) load("/v1/lines/${line.id}/vehicles?direction=${line.direction}", s, live = true) else LoadState()
+            val vehiclesPath = "/v1/lines/${line.id}/vehicles?direction=${line.direction}"
+            val vehicles = if (s.showVehicles) load(vehiclesPath, s, live = true) else LoadState()
             // Never keep the previous live result after a failed refresh.
+            learn(vehiclesPath, vehicles.result)
             current = current.copy(vehicles = vehicles.result, error = vehicles.error ?: current.error)
             _snapshots.update { it + (line.key to current) }
         } }.awaitAll() } }
