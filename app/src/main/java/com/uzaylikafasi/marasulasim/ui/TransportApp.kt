@@ -534,7 +534,7 @@ private fun ArrivalCard(arrival: Arrival, stopsBetween: Int? = null, lightsAhead
                     stopsBetween?.takeIf { settings.stopPad && it > 0 }?.let { "$it durak × $SECONDS_PER_STOP sn" },
                     lightsAhead.takeIf { settings.lightPad && it > 0 }?.let { "$it ışık × $LIGHT_WAIT_SECONDS sn" }).joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-                if (waitingAtLight && settings.lightPad) Text("Kırmızı ışıkta bekliyor", style = MaterialTheme.typography.labelMedium,
+                if (waitingAtLight && settings.lightPad) Text("Işık yakınında bekliyor", style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold, color = Color(0xFFDC2626))
                 Text(listOfNotNull(arrival.distance.takeIf { it.isNotBlank() }, arrival.plate.takeIf { it.isNotBlank() }).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -891,10 +891,10 @@ private fun SettingsSheet(settings: Settings, vm: TransportViewModel, onDismiss:
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Ayarlar", style = MaterialTheme.typography.titleLarge)
             Text("Varış süresi", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
-            SettingSwitch(Icons.Outlined.Timer, "Durak payı", "Arada kalan her durak için $SECONDS_PER_STOP sn eklenir", settings.stopPad, vm::stopPad)
+            SettingSwitch(Icons.Outlined.Timer, "Durak payı", "Deneysel: her ara durak için $SECONDS_PER_STOP sn eklenir", settings.stopPad, vm::stopPad)
             val known = remember { vm.lightLearner.lights().size }
             SettingSwitch(Icons.Outlined.Traffic, "Kırmızı ışık payı",
-                "Yoldaki her ışık için $LIGHT_WAIT_SECONDS sn eklenir. Işıklar, durak dışında duran otobüslerden öğrenilir ($known ışık biliniyor)",
+                "Deneysel: yoldaki her ışık için $LIGHT_WAIT_SECONDS sn eklenir. Işıklar, durak dışında duran otobüslerden öğrenilir ($known ışık biliniyor)",
                 settings.lightPad, vm::lightPad)
             Text("Harita", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
             SettingSwitch(Icons.Outlined.DirectionsBus, "Otobüsleri göster", "Seçili hatların canlı otobüsleri", settings.showVehicles, vm::showVehicles)
