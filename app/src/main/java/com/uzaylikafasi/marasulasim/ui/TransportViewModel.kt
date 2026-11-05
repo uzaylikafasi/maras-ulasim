@@ -20,7 +20,7 @@ data class TrackedBus(val line: Line, val plate: String, val stop: Stop, val veh
     fun snapshot(): LineSnapshot = LineSnapshot(line, vehicles = vehicles?.let { r ->
         runCatching { r.copy(data = org.json.JSONArray(r.arrayData.objects().filter { it.optString("plate") == plate })) }.getOrNull()
     })
-    fun vehicle(): Vehicle? = runCatching { vehicles?.arrayData?.let(::parseVehicles)?.firstOrNull { it.plate == plate } }.getOrNull()
+    fun vehicle(): Vehicle? = runCatching { vehicles?.takeUnless { it.isOld() }?.arrayData?.let(::parseVehicles)?.firstOrNull { it.plate == plate } }.getOrNull()
 }
 data class LoadState(val loading: Boolean = false, val result: ApiResult? = null, val error: String? = null)
 
@@ -96,7 +96,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
         val at = result?.fetchedAt ?: return
         if (result.stale || learnedAt.put(path, at) == at) return
         val vehicles = runCatching { result.arrayData.let(::parseVehicles) }.getOrNull() ?: return
-        withContext(Dispatchers.Default) { app.lights.observe(vehicles) }
+        app.lights.observe(vehicles)
     }
     fun trackOnTap(value: Boolean) = action { app.store.setTrackOnTap(value) }
     private val _tracked = MutableStateFlow<TrackedBus?>(null)
@@ -114,7 +114,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
             val path = "/v1/lines/${t.line.id}/vehicles?direction=1"
             val r = load(path, s, live = true)
             learn(path, r.result)
-            _tracked.update { if (it?.key != t.key) it else it.copy(vehicles = r.result ?: it.vehicles, error = r.error
+            _tracked.update { if (it?.key != t.key) it else it.copy(vehicles = r.result, error = r.error
                 ?: if (r.result != null && TrackedBus(t.line, t.plate, t.stop, r.result).vehicle() == null) "Otobüs şu an konum bildirmiyor." else null) }
             delay(10_000)
         }
