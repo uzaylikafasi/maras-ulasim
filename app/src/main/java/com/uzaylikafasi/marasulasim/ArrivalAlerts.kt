@@ -19,14 +19,17 @@ const val ALERT_POLL_MS = 30_000L
 
 data class ArrivalAlert(val id: String = UUID.randomUUID().toString(), val stop: Stop, val arrival: Arrival,
     val minutes: Int, val createdAt: Long = System.currentTimeMillis(), val notified: Boolean = false,
-    val active: Boolean = true, val missing: Int = 0, val status: String = "Süre bekleniyor") {
+    val active: Boolean = true, val missing: Int = 0, val status: String = "Süre bekleniyor",
+    val previousStops: List<String> = emptyList(), val upcomingStops: List<String> = emptyList(), val progressAt: Long = 0, val checkedAt: Long = 0) {
     fun json(): JSONObject = JSONObject().put("id",id).put("stop",stop.json()).put("code",arrival.code)
         .put("plate",arrival.plate).put("lineId",arrival.lineId).put("minutes",minutes).put("createdAt",createdAt)
         .put("notified",notified).put("active",active).put("missing",missing).put("status",status)
+        .put("previousStops",JSONArray(previousStops)).put("upcomingStops",JSONArray(upcomingStops)).put("progressAt",progressAt).put("checkedAt",checkedAt)
 }
 fun parseAlert(o: JSONObject) = ArrivalAlert(o.getString("id"),parseStop(o.getJSONObject("stop")),
     Arrival(o.getString("code"),o.getString("plate"),"Süre belirtilmedi","",lineId=o.getString("lineId")),
-    o.getInt("minutes"),o.getLong("createdAt"),o.optBoolean("notified"),o.optBoolean("active"),o.optInt("missing"),o.optString("status"))
+    o.getInt("minutes"),o.getLong("createdAt"),o.optBoolean("notified"),o.optBoolean("active"),o.optInt("missing"),o.optString("status"),
+    o.array("previousStops").texts(),o.array("upcomingStops").texts(),o.optLong("progressAt"),o.optLong("checkedAt"))
 
 data class AlertDecision(val alert: ArrivalAlert, val notify: Boolean = false)
 /** Yalnız taze kaynak ETA'sı eşik aşımını tetikler; bilinmeyen süre sıfır sayılmaz. */
@@ -47,6 +50,15 @@ fun evaluateAlert(alert: ArrivalAlert, arrivals: List<Arrival>?, now: Long): Ale
     val notify = seconds != null && seconds <= alert.minutes * 60 && !alert.notified
     return AlertDecision(alert.copy(missing=0,notified=alert.notified || notify,
         status=seconds?.let { "Kaynak tahmini: ${formatDuration(it)}" } ?: "Varış süresi bilinmiyor"),notify)
+}
+
+fun trackingText(item: ArrivalAlert): String = buildString {
+    append("${item.arrival.code} · ${item.arrival.plate} · ${item.stop.name}\n${item.status}")
+    if(item.progressAt > 0 && item.upcomingStops.isNotEmpty()) {
+        append("\nKaynağa göre son geçilen: "+item.previousStops.joinToString(" → ").ifBlank { "Hat başlangıcı" })
+        append("\nSıradaki duraklar: "+item.upcomingStops.joinToString(" → "))
+    } else append("\nDurak ilerlemesi şu an doğrulanamıyor")
+    if(item.checkedAt > 0) append("\nSon kontrol: "+java.text.SimpleDateFormat("HH:mm:ss",java.util.Locale("tr","TR")).format(java.util.Date(item.checkedAt)))
 }
 
 object ArrivalAlerts {
@@ -81,8 +93,11 @@ object ArrivalAlerts {
         if(!update(c,decision.alert)) return
         val item=decision.alert
         val manager=c.getSystemService(NotificationManager::class.java)
-        if(decision.notify && enabled(c)) {
-            runCatching { manager.notify(item.id,0,notification(c,"${item.arrival.code} · ${item.arrival.plate}","${item.stop.name}: ${item.status}")) }
+        // Eşik uyarısı bir kez ses çıkarır; açık bildirimdeki tahmin sonraki sorgularda yenilenir.
+        // Kullanıcı kapattığı bildirimi her sorguda yeniden oluşturma.
+        val visible = manager.activeNotifications.any { it.tag == item.id && it.id == 0 }
+        if((decision.notify || (item.notified && item.active && visible)) && enabled(c)) {
+            runCatching { manager.notify(item.id,0,notification(c,"${item.arrival.code} · ${item.arrival.plate}",trackingText(item))) }
                 .onFailure { update(c,item.copy(active=false,notified=false,status="Bildirim gönderilemedi; telefonun bildirim ayarlarını kontrol et")) }
         }
         if(!item.active) manager.cancel(item.id,0)
@@ -133,6 +148,7 @@ class ArrivalTrackingService : Service() {
     }
     private suspend fun poll() {
         val app = application as TransportApplication
+        val progressLoader = BusProgressLoader(app.repository)
         wake = getSystemService(PowerManager::class.java).newWakeLock(PowerManager.PARTIAL_WAKE_LOCK,"maras:arrival").apply { acquire(ALERT_LIFETIME_MS+60_000) }
         val sessionStarted = SystemClock.elapsedRealtime()
         try {
@@ -147,12 +163,23 @@ class ArrivalTrackingService : Service() {
                         if(r.isOld()) null else parseArrivals(r.objectData.requiredArray("buses"))
                     } catch(e: CancellationException) { throw e } catch(_:Exception) { null }
                     for(item in group) {
-                        val decision = evaluateAlert(item,arrivals,System.currentTimeMillis())
+                        var decision = evaluateAlert(item,arrivals,System.currentTimeMillis())
+                        val found = arrivals?.firstOrNull { it.plate == item.arrival.plate && it.lineId == item.arrival.lineId }
+                        val progress = if (found != null && decision.alert.active) try {
+                            withTimeoutOrNull(12_000) { progressLoader.load(settings.server,settings.apiKey,found,item.stop.id) }
+                        } catch(e: CancellationException) { throw e } catch(_:Exception) { null } else null
+                        decision = decision.copy(alert=decision.alert.copy(
+                            previousStops=progress?.previous.orEmpty(), upcomingStops=progress?.upcoming.orEmpty(),
+                            progressAt=if(progress!=null) System.currentTimeMillis() else 0, checkedAt=System.currentTimeMillis()))
                         // Önce kalıcı olarak işaretle: hizmet yeniden başlarsa aynı uyarı tekrarlanmaz.
                         ArrivalAlerts.applyDecision(this,decision)
                     }
                 }
-                if(ArrivalAlerts.list(this).none { it.active }) break
+                val active = ArrivalAlerts.list(this).filter { it.active }
+                if(active.isEmpty()) break
+                val summary = active.joinToString("\n\n") { item -> trackingText(item) }
+                getSystemService(NotificationManager::class.java).notify(ArrivalAlerts.SERVICE_ID,
+                    ArrivalAlerts.notification(this,"Otobüs takibi · ${active.size} otobüs",summary,true))
                 delay(ALERT_POLL_MS)
             }
         } finally {

@@ -29,7 +29,8 @@ private const val FOCUS_SOURCE = "focus-source"
 private const val FOCUS_LAYER = "focus"
 private const val ALL_STOPS = "all-stops"
 private const val ALL_STOPS_ICON = "all-stops-simge"
-private const val STOP_COLOR = "#E11D2E"
+private const val STOP_COLOR = "#2563EB"
+internal const val STOP_MIN_ZOOM = 15f
 private const val PLACES = "yerler"
 private const val CHEVRON = "yol-oku"
 
@@ -211,7 +212,7 @@ private class MapHolder(private val context: Context, private val error: (String
                 val id = nearest(m, pixel, rendered.map { "stops-$it" } + FOCUS_LAYER)?.getNumberProperty("id")?.toLong()
                 id?.let { knownStops[it] }?.let { clicked?.invoke(it); return@addOnMapClickListener true }
                 // Seçili hatlarda olmayan durak: şehirdeki bütün duraklar katmanından
-                val stop = nearest(m, pixel, listOf(ALL_STOPS, ALL_STOPS_ICON))?.let { f -> runCatching { Stop(f.getNumberProperty("id").toLong(), f.getStringProperty("code"),
+                val stop = nearest(m, pixel, listOf(ALL_STOPS))?.let { f -> runCatching { Stop(f.getNumberProperty("id").toLong(), f.getStringProperty("code"),
                     f.getStringProperty("name"), f.getNumberProperty("lat").toDouble(), f.getNumberProperty("lng").toDouble()) }.getOrNull() }
                 if (stop != null) { clicked?.invoke(stop); return@addOnMapClickListener true }
                 val place = nearest(m, pixel, listOf(PLACES))
@@ -295,8 +296,8 @@ private class MapHolder(private val context: Context, private val error: (String
         if (source == null) {
             style.addSource(GeoJsonSource(FOCUS_SOURCE, json))
             // Otobüslerin altında kalır: durağa gelmiş otobüs işaretin altında kaybolmasın
-            val layer = CircleLayer(FOCUS_LAYER, FOCUS_SOURCE).withProperties(circleRadius(14f), circleColor("#B91C1C"),
-                circleStrokeColor("#FFFFFF"), circleStrokeWidth(3f))
+            val layer = SymbolLayer(FOCUS_LAYER, FOCUS_SOURCE).withProperties(iconImage(ALL_STOPS_ICON),
+                iconSize(0.7f), iconAllowOverlap(true), iconIgnorePlacement(true))
             val firstBus = style.layers.firstOrNull { it.id.startsWith("vehicles-bg-") }?.id
             if (firstBus != null) style.addLayerBelow(layer, firstBus) else style.addLayer(layer)
         } else source.setGeoJson(json)
@@ -316,25 +317,22 @@ private class MapHolder(private val context: Context, private val error: (String
         bounds.forEach { (sw, ne) -> b.include(LatLng(sw.latitude, sw.longitude)); b.include(LatLng(ne.latitude, ne.longitude)) }
         runCatching { m.animateCamera(CameraUpdateFactory.newLatLngBounds(b.build(), 120)) }
     }
-    /** Şehirdeki bütün duraklar (uygulamaya gömülü liste): uzaktan küçük nokta, yakınlaşınca adlar. */
+    /** Durak simgeleri yalnız mahalle/sokak ölçeğinde; şehir görünümünde kapalı. */
     private fun addAllStops(style: Style) {
         if (style.getSource(ALL_STOPS) != null) return
+        style.addImage(ALL_STOPS_ICON, placeBitmap(STOP_COLOR, androidx.compose.material.icons.Icons.Filled.DirectionsBus))
         style.addSource(GeoJsonSource(ALL_STOPS, "{\"type\":\"FeatureCollection\",\"features\":[]}"))
         updateNearbyStops(style)
-        // Duraklar kırmızı ve iri (Samet/Ömer: beyaz-gri noktalar görünmüyordu); yakında içinde otobüs simgesi
-        style.addLayer(CircleLayer(ALL_STOPS, ALL_STOPS).withProperties(
-            circleRadius(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(8, 3.5f), Expression.stop(14, 7f), Expression.stop(16, 12f))),
-            circleColor(STOP_COLOR), circleStrokeColor("#FFFFFF"), circleStrokeWidth(2.5f),
-            circleOpacity(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(10, 0.7f), Expression.stop(14.6, 1f))),
-            circleStrokeOpacity(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(10, 0.7f), Expression.stop(14.6, 1f)))).apply { minZoom = 0f; maxZoom = 16f })
-        runCatching { style.addImage(ALL_STOPS_ICON, placeBitmap(STOP_COLOR, androidx.compose.material.icons.Icons.Filled.DirectionsBus)) }
-        style.addLayer(SymbolLayer(ALL_STOPS_ICON, ALL_STOPS).withProperties(iconImage(ALL_STOPS_ICON),
-            iconSize(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(16, 1.25f), Expression.stop(18, 1.7f))),
-            iconAllowOverlap(true), iconIgnorePlacement(true)).apply { minZoom = 16f })
+        style.addLayer(stopSymbols(ALL_STOPS, ALL_STOPS))
         style.addLayer(SymbolLayer("$ALL_STOPS-ad", ALL_STOPS).withProperties(textField(Expression.get("name")), textSize(10f),
-            textColor("#3B4C50"), textHaloColor("#FFFFFF"), textHaloWidth(1.2f), textOffset(arrayOf(0f, 1.5f)), textAnchor(Property.TEXT_ANCHOR_TOP),
+            textColor("#3B4C50"), textHaloColor("#FFFFFF"), textHaloWidth(1.2f), textOffset(arrayOf(0f, 1.6f)), textAnchor(Property.TEXT_ANCHOR_TOP),
             textFont(arrayOf("Noto Sans Regular")), textOptional(true)).apply { minZoom = 16f })
     }
+
+    private fun stopSymbols(id: String, source: String) = SymbolLayer(id, source).withProperties(
+        iconImage(ALL_STOPS_ICON),
+        iconSize(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(15, 0.55f), Expression.stop(18, 0.85f))),
+        iconAllowOverlap(false), iconIgnorePlacement(false), iconPadding(3f)).apply { minZoom = STOP_MIN_ZOOM }
 
     private val stopCatalog: List<Stop> by lazy {
         runCatching { JSONObject(context.assets.open("all-stops.json").bufferedReader().use { it.readText() })
@@ -343,6 +341,10 @@ private class MapHolder(private val context: Context, private val error: (String
     }
     private fun updateNearbyStops(style: Style) {
         val m = map ?: return
+        if (m.cameraPosition.zoom < STOP_MIN_ZOOM) {
+            style.getSourceAs<GeoJsonSource>(ALL_STOPS)?.let { updateSource(it, ALL_STOPS, "{\"type\":\"FeatureCollection\",\"features\":[]}") }
+            return
+        }
         val center = m.cameraPosition.target ?: return
         val at = Coordinate(center.latitude, center.longitude)
         val bounds = m.projection.visibleRegion.latLngBounds
@@ -493,11 +495,8 @@ private class MapHolder(private val context: Context, private val error: (String
             val source = style.getSourceAs<GeoJsonSource>(sourceId)
             if (source == null) {
                 style.addSource(GeoJsonSource(sourceId, json))
-                style.addLayer(CircleLayer("stops-$key", sourceId).withProperties(
-                    circleRadius(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(12, 5.5f), Expression.stop(16, 12f))),
-                    circleColor(STOP_COLOR), circleStrokeColor("#FFFFFF"), circleStrokeWidth(3f)).apply { minZoom = 12f })
+                style.addLayer(stopSymbols("stops-$key", sourceId))
             } else updateSource(source, sourceId, json)
-            style.getLayerAs<CircleLayer>("stops-$key")?.setProperties(circleStrokeColor(color))
             val vehicles = if (!showVehicles) emptyList() else runCatching {
                 snapshot.vehicles?.takeUnless { it.isOld(java.time.Instant.ofEpochMilli(now)) }?.arrayData?.let(::parseVehicles)
             }.getOrNull().orEmpty()

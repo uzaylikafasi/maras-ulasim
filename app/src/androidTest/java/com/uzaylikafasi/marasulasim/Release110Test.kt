@@ -65,8 +65,11 @@ class Release110Test {
                 val first=manager.activeNotifications.first { it.tag==item.id }
                 Thread.sleep(35_000)
                 val after=manager.activeNotifications.firstOrNull { it.tag==item.id }
-                // Araç geçmişse bildirim kaldırılabilir; duruyorsa tekrar gönderilmemeli.
-                if(after!=null) assertEquals(first.postTime,after.postTime)
+                // Açık bildirimin tahmini yenilenir; aynı kimlik ve yalnız bir kez ses ilkesi korunur.
+                if(after!=null) {
+                    assertEquals(first.key,after.key)
+                    assertTrue(after.notification.flags and android.app.Notification.FLAG_ONLY_ALERT_ONCE != 0)
+                }
                 assertTrue(ArrivalAlerts.list(context).first { it.id==item.id }.notified)
             }
         } finally { ArrivalAlerts.remove(context,item.id); context.stopService(Intent(context,ArrivalTrackingService::class.java)) }

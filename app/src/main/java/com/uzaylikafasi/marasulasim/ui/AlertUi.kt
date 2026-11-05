@@ -51,20 +51,28 @@ fun ArrivalAlertDialog(stop: Stop, arrival: Arrival, onDismiss: () -> Unit) {
 }
 
 @Composable
-fun TrackingSheet(onDismiss: () -> Unit, onView: (ArrivalAlert) -> Unit, onReminders: () -> Unit) {
+fun TrackingSheet(onDismiss: () -> Unit, onView: (ArrivalAlert) -> Unit, onReminders: () -> Unit, onAdd: () -> Unit) {
     val context = LocalContext.current
     val revision by ArrivalAlerts.revision.collectAsStateWithLifecycle()
     val items = remember(revision) { ArrivalAlerts.list(context) }
     ModalBottomSheet(onDismissRequest=onDismiss,sheetState=rememberModalBottomSheetState(skipPartiallyExpanded=true)) {
         Column(Modifier.padding(20.dp).padding(bottom=24.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(12.dp)) {
             Text("Bildirimler",style=MaterialTheme.typography.titleLarge)
-            Text("Takip",style=MaterialTheme.typography.titleMedium)
-            if(items.isEmpty()) Text("Takip edilen otobüs yok. Duraktaki otobüsün bilgi kartından varış uyarısı kurabilirsin.")
+            Row(Modifier.fillMaxWidth(),horizontalArrangement=Arrangement.SpaceBetween,verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
+                Text("Takip",style=MaterialTheme.typography.titleMedium)
+                FilledTonalButton(onClick=onAdd) { Text("Otobüs ekle") }
+            }
+            if(items.isEmpty()) Text("Takip edilen otobüs yok. Otobüs ekle ile durak ve otobüs seçebilirsin.")
             items.forEach { item ->
                 Card(Modifier.fillMaxWidth()) { Column(Modifier.padding(12.dp),verticalArrangement=Arrangement.spacedBy(6.dp)) {
                     Text("${item.arrival.code} · ${item.arrival.plate}")
                     Text("${item.stop.name} · ${item.minutes} dk kala")
                     Text(item.status + if(item.notified) " · Uyarı gönderildi" else "")
+                    if(item.progressAt>0 && item.upcomingStops.isNotEmpty()) {
+                        Text("Kaynağa göre son geçilen: "+item.previousStops.joinToString(" → ").ifBlank { "Hat başlangıcı" },style=MaterialTheme.typography.bodySmall)
+                        Text("Sıradaki duraklar: "+item.upcomingStops.joinToString(" → "),style=MaterialTheme.typography.bodySmall)
+                    } else Text("Durak ilerlemesi şu an doğrulanamıyor",style=MaterialTheme.typography.bodySmall)
+                    if(item.checkedAt>0) Text("Son kontrol: "+java.text.SimpleDateFormat("HH:mm:ss",java.util.Locale("tr","TR")).format(java.util.Date(item.checkedAt)),style=MaterialTheme.typography.labelSmall)
                     Row { TextButton(onClick={ onView(item) }) { Text("Haritada izle") }
                         TextButton(onClick={ ArrivalAlerts.remove(context,item.id) }) { Text("Kaldır") } }
                 } }
