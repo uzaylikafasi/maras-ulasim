@@ -167,6 +167,7 @@ private class MapHolder(private val context: Context, private val error: (String
     val view: MapView
     private var map: MapLibreMap? = null
     private var pendingFocus: Stop? = null
+    private var markedStop: Stop? = null
     var ready: (() -> Unit)? = null
     var clicked: ((Stop) -> Unit)? = null
     var vehicleClicked: ((Line, Vehicle) -> Unit)? = null
@@ -270,7 +271,11 @@ private class MapHolder(private val context: Context, private val error: (String
         if (stop.latitude != null && stop.longitude != null) {
             markStop(stop)
             val bounds = LatLngBounds.Builder().include(LatLng(at.latitude, at.longitude)).include(LatLng(stop.latitude, stop.longitude)).build()
-            val camera = runCatching { m.getCameraForLatLngBounds(bounds, intArrayOf(160, 640, 160, 720)) }.getOrNull()
+            val density=context.resources.displayMetrics.density
+            val side=minOf((32*density).toInt(),view.width/6)
+            val top=minOf((180*density).toInt(),view.height/3)
+            val bottom=minOf((80*density).toInt(),view.height/5)
+            val camera = runCatching { m.getCameraForLatLngBounds(bounds, intArrayOf(side, top, side, bottom)) }.getOrNull()
             if (camera != null) {
                 m.animateCamera(CameraUpdateFactory.newCameraPosition(org.maplibre.android.camera.CameraPosition.Builder(camera)
                     .zoom(camera.zoom.coerceAtMost(16.5)).build()))
@@ -280,6 +285,7 @@ private class MapHolder(private val context: Context, private val error: (String
         m.animateCamera(CameraUpdateFactory.newLatLngZoom(LatLng(at.latitude, at.longitude), 15.5))
     }
     private fun markStop(stop: Stop) {
+        markedStop=stop
         if (stop.latitude == null || stop.longitude == null) return
         // "Haritada göster" ile açılan durak, seçili hatlarda olmasa da işaretli görünür
         val style = map?.style ?: return
@@ -315,7 +321,7 @@ private class MapHolder(private val context: Context, private val error: (String
         if (style.getSource(ALL_STOPS) != null) return
         style.addSource(GeoJsonSource(ALL_STOPS, "{\"type\":\"FeatureCollection\",\"features\":[]}"))
         updateNearbyStops(style)
-        // Duraklar turuncu ve iri (Samet/Ömer: beyaz-gri noktalar görünmüyordu); yakında içinde otobüs simgesi
+        // Duraklar kırmızı ve iri (Samet/Ömer: beyaz-gri noktalar görünmüyordu); yakında içinde otobüs simgesi
         style.addLayer(CircleLayer(ALL_STOPS, ALL_STOPS).withProperties(
             circleRadius(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(8, 3.5f), Expression.stop(14, 7f), Expression.stop(16, 12f))),
             circleColor(STOP_COLOR), circleStrokeColor("#FFFFFF"), circleStrokeWidth(2.5f),
@@ -535,7 +541,7 @@ private class MapHolder(private val context: Context, private val error: (String
         animateBuses(style)
         fitNewLines(snapshots, keys)
         rendered = keys
-        knownStops = stopIndex + listOfNotNull(pendingFocus?.let { it.id to it })
+        knownStops = stopIndex + listOfNotNull(markedStop?.let { it.id to it },pendingFocus?.let { it.id to it })
         knownVehicles = vehicleIndex
     }
 }

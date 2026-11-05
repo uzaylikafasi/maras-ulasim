@@ -24,7 +24,7 @@ import com.uzaylikafasi.marasulasim.data.Stop
 @Composable
 fun ArrivalAlertDialog(stop: Stop, arrival: Arrival, onDismiss: () -> Unit) {
     val context = LocalContext.current
-    var minutes by remember { mutableStateOf("10") }
+    var minutes by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf("10") }
     var error by remember { mutableStateOf<String?>(null) }
     fun save() {
         if(!ArrivalAlerts.enabled(context)) { error="Bildirimler kapalı. Telefon ayarlarından varış ve takip bildirimlerini aç."; return }
@@ -39,8 +39,8 @@ fun ArrivalAlertDialog(stop: Stop, arrival: Arrival, onDismiss: () -> Unit) {
     }
     AlertDialog(onDismissRequest=onDismiss,title={ Text("Varış uyarısı") },text={ Column(verticalArrangement=Arrangement.spacedBy(10.dp)) {
         Text("${arrival.code} · ${arrival.plate}\n${stop.name}")
-        OutlinedTextField(value=minutes,onValueChange={ minutes=it.filter(Char::isDigit).take(2) },label={ Text("Kaç dakika kala? (1–60)") },singleLine=true)
-        Text("Kaynak tahmini bu sürenin altına indiğinde bir kez bildirilir. Süre bilinmiyorsa beklenir. Takip en çok 2 saat sürer; Bildirimler > Takip'ten kaldırabilirsin.")
+        OutlinedTextField(value=minutes,onValueChange={ minutes=it.filter(Char::isDigit).take(2) },label={ Text("Kaç dakika kala? (1–60)") },singleLine=true,keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Number))
+        Text("Kaynak tahmini bu süreye indiğinde bir kez bildirilir. Süre bilinmiyorsa beklenir. Takip en çok 2 saat sürer; Bildirimler > Takip'ten kaldırabilirsin.")
         error?.let { Text(it,color=MaterialTheme.colorScheme.error)
             TextButton(onClick={ context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName)) }) { Text("Bildirim ayarları") }
         }

@@ -94,7 +94,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     private suspend fun learn(path: String, result: ApiResult?) {
         // Sunucu önbelleğinden gelen aynı ölçüm, otobüsü yanlışlıkla "duruyor" gösterir: aynı zaman damgası bir kez sayılır
         val at = result?.fetchedAt ?: return
-        if (result.stale || learnedAt.put(path, at) == at) return
+        if (result.isOld() || learnedAt.put(path, at) == at) return
         val vehicles = runCatching { result.arrayData.let(::parseVehicles) }.getOrNull() ?: return
         app.lights.observe(vehicles)
     }
@@ -102,7 +102,10 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     private val _tracked = MutableStateFlow<TrackedBus?>(null)
     val tracked = _tracked.asStateFlow()
     /** Yaklaşan otobüse dokununca: hat kodu ve gidilen durakla o plaka izlenir. */
-    fun track(arrival: Arrival, stop: Stop) = action {
+    private var trackingRequest=0L
+    fun track(arrival: Arrival, stop: Stop) {
+        val request=++trackingRequest
+        action {
         val id = arrival.lineId.toLongOrNull() ?: return@action notify("Bu otobüsün hattı bildirilmedi, izlenemiyor.")
         val s = settings.value
         val known = (s.mapLines + s.lines).filter { it.code == arrival.code }
@@ -111,9 +114,10 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
         val directions = (found+known).distinctBy { it.key }
         val line = directions.firstOrNull { it.id == id }
         if(line==null) return@action notify("Otobüsün yönü doğrulanamadı. Yeniden dene.")
-        _tracked.value = TrackedBus(line, arrival.plate, stop, fallbackLine=directions.firstOrNull { it.direction!=line.direction })
+        if(request==trackingRequest) _tracked.value = TrackedBus(line, arrival.plate, stop, fallbackLine=directions.firstOrNull { it.direction!=line.direction })
     }
-    fun stopTracking() { _tracked.value = null }
+    }
+    fun stopTracking() { trackingRequest++; _tracked.value = null }
     suspend fun watchTracked() {
         while (currentCoroutineContext().isActive) {
             val t = _tracked.value ?: return

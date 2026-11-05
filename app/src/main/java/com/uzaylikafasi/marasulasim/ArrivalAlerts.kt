@@ -64,15 +64,28 @@ object ArrivalAlerts {
     }
     @Synchronized fun add(c: Context, alert: ArrivalAlert) {
         require(alert.minutes in 1..60 && alert.arrival.plate.isNotBlank() && alert.arrival.lineId.toLongOrNull() != null)
-        val old = list(c).filterNot { it.stop.id == alert.stop.id && it.arrival.plate == alert.arrival.plate && it.arrival.lineId == alert.arrival.lineId }
+        val previous=list(c)
+        val replaced=previous.filter { it.stop.id == alert.stop.id && it.arrival.plate == alert.arrival.plate && it.arrival.lineId == alert.arrival.lineId }
+        val old=previous-replaced.toSet()
         require(old.count { it.active } < 4) { "Aynı anda en fazla 4 otobüs takip edebilirsin." }
         write(c,old.filter { !it.active }.takeLast(19) + old.filter { it.active } + alert)
+        replaced.forEach { c.getSystemService(NotificationManager::class.java).cancel(it.id,0) }
     }
     @Synchronized fun update(c: Context, alert: ArrivalAlert): Boolean {
         val old = list(c)
         if (old.none { it.id == alert.id && it.active }) return false
         if(old.first { it.id==alert.id } != alert) write(c,old.map { if(it.id==alert.id) alert else it })
         return true
+    }
+    @Synchronized fun applyDecision(c: Context, decision: AlertDecision) {
+        if(!update(c,decision.alert)) return
+        val item=decision.alert
+        val manager=c.getSystemService(NotificationManager::class.java)
+        if(decision.notify && enabled(c)) {
+            runCatching { manager.notify(item.id,0,notification(c,"${item.arrival.code} · ${item.arrival.plate}","${item.stop.name}: ${item.status}")) }
+                .onFailure { update(c,item.copy(active=false,notified=false,status="Bildirim gönderilemedi; telefonun bildirim ayarlarını kontrol et")) }
+        }
+        if(!item.active) manager.cancel(item.id,0)
     }
     @Synchronized fun remove(c: Context, id: String) {
         write(c,list(c).filterNot { it.id==id })
@@ -136,10 +149,7 @@ class ArrivalTrackingService : Service() {
                     for(item in group) {
                         val decision = evaluateAlert(item,arrivals,System.currentTimeMillis())
                         // Önce kalıcı olarak işaretle: hizmet yeniden başlarsa aynı uyarı tekrarlanmaz.
-                        if(ArrivalAlerts.update(this,decision.alert) && decision.notify && ArrivalAlerts.enabled(this))
-                            getSystemService(NotificationManager::class.java).notify(item.id,0,
-                                ArrivalAlerts.notification(this,"${item.arrival.code} · ${item.arrival.plate}","${item.stop.name}: ${decision.alert.status}"))
-                        if(!decision.alert.active) getSystemService(NotificationManager::class.java).cancel(item.id,0)
+                        ArrivalAlerts.applyDecision(this,decision)
                     }
                 }
                 if(ArrivalAlerts.list(this).none { it.active }) break
