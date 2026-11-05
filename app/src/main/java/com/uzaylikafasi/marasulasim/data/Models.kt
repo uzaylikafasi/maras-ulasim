@@ -27,9 +27,12 @@ const val SECONDS_PER_STOP = 15
 /** Kaynak süreye eklenecek pay (sn): ara durak başına [SECONDS_PER_STOP], yoldaki ışık başına [LIGHT_WAIT_SECONDS]. */
 fun padSeconds(stopsBetween: Int?, stopPad: Boolean, lights: Int, lightPad: Boolean): Int =
     (if (stopPad) (stopsBetween ?: 0) * SECONDS_PER_STOP else 0) + (if (lightPad) lights * LIGHT_WAIT_SECONDS else 0)
-fun secondsOf(a: Arrival): Int? = a.seconds ?: Regex("""(?:(\d+)\s*(?:dk|dakika))?\s*(?:(\d+)\s*(?:sn|saniye))?""").matchEntire(a.remaining.trim())?.let { m ->
-    val dk = m.groupValues[1].toIntOrNull(); val sn = m.groupValues[2].toIntOrNull()
-    if (dk == null && sn == null) null else (dk ?: 0) * 60 + (sn ?: 0)
+fun secondsOf(a: Arrival): Int? = a.seconds?.takeIf { it >= 0 } ?: Regex("""(?:(\d+)\s*(?:dk|dakika))?\s*(?:(\d+)\s*(?:sn|saniye))?""").matchEntire(a.remaining.trim())?.let { m ->
+    val dk = m.groupValues[1].ifBlank { "0" }.toLongOrNull() ?: return@let null
+    val sn = m.groupValues[2].ifBlank { "0" }.toLongOrNull() ?: return@let null
+    if (m.groupValues[1].isBlank() && m.groupValues[2].isBlank()) null
+    else if (dk > Int.MAX_VALUE / 60L || sn > Int.MAX_VALUE) null
+    else (dk * 60 + sn).takeIf { it <= Int.MAX_VALUE }?.toInt()
 }
 /** Aracın sıradaki durağından (dahil) bakılan durağa (hariç) kadar durup yolcu alacağı durak sayısı; sıra bulunamazsa null. */
 fun stopsBetween(lineStopIds: List<Long>?, nextStopId: Long, targetId: Long): Int? {

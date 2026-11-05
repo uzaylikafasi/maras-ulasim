@@ -16,8 +16,11 @@ import com.uzaylikafasi.marasulasim.ui.TransportApp
 import com.uzaylikafasi.marasulasim.ui.TransportViewModel
 import kotlinx.coroutines.*
 import kotlin.coroutines.resume
+import kotlinx.coroutines.sync.Mutex
+import kotlinx.coroutines.sync.withLock
 
 class MainActivity : ComponentActivity() {
+    private val locationRequest = Mutex()
     private var locationGranted: ((Boolean) -> Unit)? = null
     private val locationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
         locationGranted?.invoke(result.values.any { it }); locationGranted = null
@@ -30,7 +33,7 @@ class MainActivity : ComponentActivity() {
         setContent {
             val vm: TransportViewModel = viewModel()
             TransportApp(vm, onLocate = { granted ->
-                lifecycleScope.launch {
+                lifecycleScope.launch { locationRequest.withLock {
                     val ok = hasLocation() || suspendCancellableCoroutine { continuation ->
                         locationGranted = { if (continuation.isActive) continuation.resume(it) }
                         continuation.invokeOnCancellation { locationGranted = null }
@@ -42,9 +45,9 @@ class MainActivity : ComponentActivity() {
                         else -> currentLocation()?.let { granted(it.latitude, it.longitude) }
                             ?: vm.notify("Konum alınamadı. Açık bir alanda tekrar dene.")
                     }
-                }
+                } }
             }, onNearby = {
-                lifecycleScope.launch {
+                lifecycleScope.launch { locationRequest.withLock {
                     val granted = hasLocation() || suspendCancellableCoroutine { continuation ->
                         locationGranted = { if (continuation.isActive) continuation.resume(it) }
                         continuation.invokeOnCancellation { locationGranted = null }
@@ -57,7 +60,7 @@ class MainActivity : ComponentActivity() {
                         else if (location == null) vm.nearbyFailure("Konum alınamadı. Konumu açıp tekrar dene.")
                         else vm.nearby(location.latitude, location.longitude)
                     }
-                }
+                } }
             })
         }
     }

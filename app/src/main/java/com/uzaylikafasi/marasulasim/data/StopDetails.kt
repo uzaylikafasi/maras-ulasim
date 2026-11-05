@@ -1,12 +1,16 @@
 package com.uzaylikafasi.marasulasim.data
 
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.withContext
+import kotlinx.coroutines.Dispatchers
 import org.json.JSONObject
 
 /** Statik yön/durak eşleşmeleri bellekte tutulur; araçlar her yenilemede yeniden alınır. */
-class StopDetails(private val repository: TransportRepository) {
+class StopDetails(private val repository: TransportRepository, private val enrichmentTimeoutMs: Long = 12_000) {
     private data class Terminal(val line: Line, val stops: List<Stop>, val incoming: Line, val incomingStops: List<Stop>)
     private val lineDirections = java.util.concurrent.ConcurrentHashMap<Triple<String, String, String>, List<Line>>()
+    private val stopLists = java.util.concurrent.ConcurrentHashMap<Triple<String, String, String>, List<Stop>>()
     private val terminals = java.util.concurrent.ConcurrentHashMap<Triple<String, String, Long>, List<Terminal>>()
     suspend fun fetch(stop: Stop, settings: Settings, onSource: (ApiResult) -> Unit = {}): ApiResult {
         suspend fun get(path: String, live: Boolean = false) = repository.fetch(settings.server, settings.apiKey, path, live)
@@ -15,7 +19,7 @@ class StopDetails(private val repository: TransportRepository) {
         val enriched = JSONObject(result.objectData.toString())
         val buses = enriched.requiredArray("buses")
         // An optional terminal lookup must never hide a valid source arrival list.
-        try {
+        try { withContext(Dispatchers.IO) { withTimeoutOrNull(enrichmentTimeoutMs) {
             val cacheKey = Triple(settings.server, settings.apiKey, stop.id)
             val candidates = terminals[cacheKey] ?: run {
                 val entries = get("/v1/stops/${stop.id}/lines").objectData.requiredArray("stopLines").objects()
@@ -27,8 +31,12 @@ class StopDetails(private val repository: TransportRepository) {
                         .filter { it.code == code }.also { lineDirections[lineKey] = it }
                     // StopLines carries the direction-specific line ID, not the visible code.
                     for (line in directions.filter { it.id == entry.optLong("lineId") }) {
-                        suspend fun stops(l: Line) = get("/v1/lines/${l.id}/stops?direction=${l.direction}")
-                            .objectData.requiredArray("lineStops").objects().sortedBy { it.optInt("sequenceNo") }.map(::parseStop)
+                        suspend fun stops(l: Line): List<Stop> {
+                            val key = Triple(settings.server, settings.apiKey, l.key)
+                            return stopLists[key] ?: get("/v1/lines/${l.id}/stops?direction=${l.direction}")
+                                .objectData.requiredArray("lineStops").objects().sortedBy { it.optInt("sequenceNo") }.map(::parseStop)
+                                .also { stopLists[key] = it }
+                        }
                         val lineStops = stops(line)
                         if (lineStops.indexOfFirst { it.id == stop.id } !in 0..2) continue
                         for (incoming in directions.filter { it.direction != line.direction }) {
@@ -56,7 +64,7 @@ class StopDetails(private val repository: TransportRepository) {
                     }
                 }
             }
-        } catch (cancel: CancellationException) { throw cancel }
+        } } } catch (cancel: CancellationException) { throw cancel }
         catch (_: Exception) { /* Source arrivals remain usable when the additional lookup fails. */ }
         return result.copy(data = enriched)
     }
