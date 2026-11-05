@@ -28,6 +28,14 @@ class BugRegressionTest {
             assertEquals(1,server.requestCount)
         }
     }
+    @Test fun terminalTrackingKeepsTargetDirectionWhileUsingIncomingPosition() {
+        val incoming=ApiResult(JSONArray("""[{"plate":"46 H 1","location":{"latitude":37.5,"longitude":36.9},"speed":0}]"""),Instant.now().toString())
+        val returning=Line(161,2,"H/1","Dönüş","Dönüş")
+        val tracked=TrackedBus(returning,"46 H 1",Stop(1,"1","Durak",37.5,36.9),incoming,fallbackLine=suggestedLine)
+        assertNotNull(tracked.vehicle()); assertEquals(returning,tracked.snapshot().line)
+        assertEquals(0.0,tracked.vehicle()!!.speed!!,0.0)
+        assertEquals(suggestedLine,tracked.fallbackLine)
+    }
     @Test fun malformedEtaCannotOverflowIntoAnImmediateAlert() {
         fun eta(text: String) = secondsOf(Arrival("H/1","46 H 1",text,""))
         assertNull(eta("999999999999999 dk"))

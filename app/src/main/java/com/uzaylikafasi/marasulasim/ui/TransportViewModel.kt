@@ -14,7 +14,7 @@ import org.json.JSONObject
 data class LineSnapshot(val line: Line, val shape: ApiResult? = null, val stops: ApiResult? = null,
                         val vehicles: ApiResult? = null, val error: String? = null)
 /** Duraktan seçilen tek otobüs: haritada yalnız o görünür ve kamera onu izler. */
-data class TrackedBus(val line: Line, val plate: String, val stop: Stop, val vehicles: ApiResult? = null, val error: String? = null) {
+data class TrackedBus(val line: Line, val plate: String, val stop: Stop, val vehicles: ApiResult? = null, val error: String? = null, val fallbackLine: Line? = null) {
     val key get() = "${line.id}:$plate"
     /** Haritaya verilen tek hatlık görünüm: güzergâh ve hat durakları yok, yalnız bu plaka. */
     fun snapshot(): LineSnapshot = LineSnapshot(line, vehicles = vehicles?.let { r ->
@@ -105,12 +105,13 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     fun track(arrival: Arrival, stop: Stop) = action {
         val id = arrival.lineId.toLongOrNull() ?: return@action notify("Bu otobüsün hattı bildirilmedi, izlenemiyor.")
         val s = settings.value
-        val known = (s.mapLines + s.lines).firstOrNull { it.id == id }
-        val line = known ?: parseSearch(withContext(Dispatchers.IO) {
-            repository.fetch(s.server,s.apiKey,searchPath(arrival.code))
-        }.objectData).lines.firstOrNull { it.id == id }
+        val known = (s.mapLines + s.lines).filter { it.code == arrival.code }
+        val found = load(searchPath(arrival.code),s).result?.objectData?.let(::parseSearch)?.lines
+            ?.filter { it.code == arrival.code }.orEmpty()
+        val directions = (found+known).distinctBy { it.key }
+        val line = directions.firstOrNull { it.id == id }
         if(line==null) return@action notify("Otobüsün yönü doğrulanamadı. Yeniden dene.")
-        _tracked.value = TrackedBus(line, arrival.plate, stop)
+        _tracked.value = TrackedBus(line, arrival.plate, stop, fallbackLine=directions.firstOrNull { it.direction!=line.direction })
     }
     fun stopTracking() { _tracked.value = null }
     suspend fun watchTracked() {
@@ -118,8 +119,15 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
             val t = _tracked.value ?: return
             val s = settings.value
             val path = "/v1/lines/${t.line.id}/vehicles?direction=${t.line.direction}"
-            val r = load(path, s, live = true)
+            var r = load(path, s, live = true)
             learn(path, r.result)
+            // Terminalde araç hâlâ biten yöne atanmış olabilir: aynı plakayı karşı yönde de ara.
+            if(t.copy(vehicles=r.result).vehicle()==null) t.fallbackLine?.let { opposite ->
+                val fallbackPath="/v1/lines/${opposite.id}/vehicles?direction=${opposite.direction}"
+                val fallback=load(fallbackPath,s,live=true)
+                learn(fallbackPath,fallback.result)
+                if(t.copy(vehicles=fallback.result).vehicle()!=null) r=fallback
+            }
             _tracked.update { if (it?.key != t.key) it else it.copy(vehicles = r.result, error = r.error
                 ?: if (r.result != null && TrackedBus(t.line, t.plate, t.stop, r.result).vehicle() == null) "Otobüs şu an konum bildirmiyor." else null) }
             delay(10_000)
