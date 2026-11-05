@@ -76,6 +76,8 @@ class Release110Test {
         val folder=java.io.File(context.cacheDir,"updates").apply { mkdirs() }
         val apk=java.io.File(folder,"update.apk")
         try {
+            apk.delete()
+            assertTrue("Eksik APK yükleyiciye gönderilmemeli",runCatching { updater.install(apk) }.isFailure)
             java.io.File(context.applicationInfo.sourceDir).copyTo(apk,overwrite=true)
             val flags=android.content.pm.PackageManager.GET_SIGNATURES or (if(android.os.Build.VERSION.SDK_INT>=28) android.content.pm.PackageManager.GET_SIGNING_CERTIFICATES else 0)
             val archive=context.packageManager.getPackageArchiveInfo(apk.absolutePath,flags)!!

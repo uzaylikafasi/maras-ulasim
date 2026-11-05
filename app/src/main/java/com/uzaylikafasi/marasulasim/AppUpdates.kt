@@ -125,6 +125,7 @@ class AppUpdates(private val context: Context) {
     }
     fun install(file: File) {
         require(file.canonicalFile.parentFile==File(context.cacheDir,"updates").canonicalFile && file.name=="update.apk")
+        check(file.isFile && file.length()>0) { "İndirilen APK bulunamadı. Yeniden indir." }
         val uri = FileProvider.getUriForFile(context,"${context.packageName}.files",file)
         context.startActivity(Intent(Intent.ACTION_VIEW).setDataAndType(uri,"application/vnd.android.package-archive")
             .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION))
@@ -151,6 +152,9 @@ class UpdateViewModel(application: android.app.Application) : androidx.lifecycle
             catch(_: Exception) { state.value = state.value.copy(error="İndirme tamamlanamadı veya APK doğrulanamadı. Bağlantını kontrol edip tekrar dene.") }
             finally { state.value = state.value.copy(downloading=false) }
         }
+    }
+    fun installFailed() {
+        state.value=state.value.copy(file=null,error="Yükleyici açılamadı. APK'yı yeniden indirip dene.")
     }
     fun error(message: String) { state.value=state.value.copy(error=message) }
 }

@@ -24,7 +24,7 @@ fun UpdatePrompt() {
     val file=state.file
     val downloading=state.downloading
     val error=state.error
-    fun install() { file?.let { runCatching { updates.install(it) }.onFailure { vm.error("Yükleyici açılamadı. Dosyayı tekrar indirip dene.") } } }
+    fun install() { file?.let { runCatching { updates.install(it) }.onFailure { vm.installFailed() } } }
     val installPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
         if(context.packageManager.canRequestPackageInstalls()) install() else vm.error("Kurulum izni verilmedi. İndirilen dosya bekliyor.")
     }
