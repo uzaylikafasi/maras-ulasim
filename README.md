@@ -10,17 +10,15 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-1.0.1-2563EB" alt="Sürüm 1.0.1">
+  <img src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-1.1.0-2563EB" alt="Sürüm 1.1.0">
   <img src="https://img.shields.io/badge/Android-8.0%2B-2563EB" alt="Android 8.0 ve üzeri">
   <a href="LICENSE"><img src="https://img.shields.io/badge/lisans-MIT-2563EB" alt="MIT lisansı"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.0.1">
-    <img src="https://img.shields.io/badge/APK_indir-1.0.1-2563EB?style=for-the-badge" alt="APK indir — sürüm 1.0.1">
+  <a href="https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.1.0">
+    <img src="https://img.shields.io/badge/APK_indir-1.1.0-2563EB?style=for-the-badge" alt="APK indir — sürüm 1.1.0">
   </a>
-  <br>
-  <a href="https://mithrixa.com/ulasim-api/download">Yedek indirme bağlantısı</a>
 </p>
 
 > **Bağımsız bir uygulamadır. Belediye veya Kahramankart'ın resmî uygulaması değildir.** Veriler kaynağın verdiği gibidir; varış süreleri tahmindir.
@@ -51,12 +49,15 @@
 - **Yakındaki duraklar:** Yakınındaki durakları ve bu duraklardan geçen hatları bul.
 - **Favoriler:** Hat, durak ve plaka kaydet; ana ekran widget'ını kullan.
 - **Yolculuk bilgileri:** İki durak arası yolculuk önerilerine, sefer saatlerine ve duyurulara bak.
-- **Hatırlatmalar:** Okul ve iş saatleri için hatırlatmalar kullan.
+- **Bildirimler ve takip:** Duraktaki otobüs için kaç dakika kala uyarılacağını seç. Arka planda en çok iki saat takip et; Bildirimler > Takip bölümünden izle veya kaldır. Bilinmeyen süre için uyarı verilmez. Saatli okul ve iş hatırlatmaları da burada.
+- **Daha hafif harita:** Görüş alanındaki duraklar yüklenir; boş bölgede menzil genişler. Telefon konumu yaklaşık 30 saniye arayla sorgulanır.
+- **Ayarlar:** Durak/ışık payı, doğrudan otobüs takibi ve görünüm seçenekleri. Süre payları deneysel ve isteğe bağlıdır; [ölçüm notları](docs/eta-arastirma.md).
+- **Güncelleme:** Yeni GitHub sürümlerini günde bir kontrol eder; notları gösterir. İndir ve Kur düğmeleriyle Android yükleyicisini açabilir veya bir sürümü atlayabilirsin.
 - **Açık kaynak harita:** MapLibre, OpenFreeMap ve OpenStreetMap.
 
 ## Kurulum
 
-1. [1.0.1 sürümünün APK dosyasını indir](https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.0.1). Gerekirse [yedek bağlantıyı](https://mithrixa.com/ulasim-api/download) kullan.
+1. [1.1.0 sürümünün APK dosyasını indir](https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.1.0).
 2. İndirdiğin APK dosyasını aç.
 3. Android istediğinde, dosyayı açtığın uygulamaya “bilinmeyen kaynaklardan yükleme” izni ver ve kurulumu tamamla.
 
