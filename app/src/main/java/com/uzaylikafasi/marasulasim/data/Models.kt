@@ -18,8 +18,25 @@ data class Stop(val id: Long, val code: String, val name: String, val latitude: 
         .put("latitude", latitude).put("longitude", longitude)
 }
 data class Coordinate(val latitude: Double, val longitude: Double)
-data class Vehicle(val plate: String, val coordinate: Coordinate, val nextStop: String, val angle: Double? = null)
-data class Arrival(val code: String, val plate: String, val remaining: String, val nextStop: String, val distance: String = "")
+data class Vehicle(val plate: String, val coordinate: Coordinate, val nextStop: String, val angle: Double? = null, val speed: Double? = null)
+data class Arrival(val code: String, val plate: String, val remaining: String, val nextStop: String, val distance: String = "", val seconds: Int? = null,
+                   val lineId: String = "", val nextStopId: Long = 0)
+/** Kaynak, Google Haritalar'daki araç sürüş süresini verir (duraklarda durmaz): her ara durak için bu kadar saniye eklenir. */
+const val SECONDS_PER_STOP = 15
+/** Kaynak süreye eklenecek pay (sn): ara durak başına [SECONDS_PER_STOP], yoldaki ışık başına [LIGHT_WAIT_SECONDS]. */
+fun padSeconds(stopsBetween: Int?, stopPad: Boolean, lights: Int, lightPad: Boolean): Int =
+    (if (stopPad) (stopsBetween ?: 0) * SECONDS_PER_STOP else 0) + (if (lightPad) lights * LIGHT_WAIT_SECONDS else 0)
+fun secondsOf(a: Arrival): Int? = a.seconds ?: Regex("""(?:(\d+)\s*(?:dk|dakika))?\s*(?:(\d+)\s*(?:sn|saniye))?""").matchEntire(a.remaining.trim())?.let { m ->
+    val dk = m.groupValues[1].toIntOrNull(); val sn = m.groupValues[2].toIntOrNull()
+    if (dk == null && sn == null) null else (dk ?: 0) * 60 + (sn ?: 0)
+}
+/** Aracın sıradaki durağından (dahil) bakılan durağa (hariç) kadar durup yolcu alacağı durak sayısı; sıra bulunamazsa null. */
+fun stopsBetween(lineStopIds: List<Long>?, nextStopId: Long, targetId: Long): Int? {
+    val ids = lineStopIds ?: return null
+    val t = ids.indexOf(targetId); val n = ids.indexOf(nextStopId)
+    return if (t >= 0 && n in 0..t) t - n else null
+}
+fun formatDuration(total: Int): String { val dk = total / 60; val sn = total % 60; return if (dk == 0) "$sn sn" else if (sn == 0) "$dk dk" else "$dk dk $sn sn" }
 
 fun parseVehicles(a: JSONArray): List<Vehicle> = a.objects().mapNotNull { o ->
     val loc = o.optJSONObject("location") ?: return@mapNotNull null
@@ -27,12 +44,14 @@ fun parseVehicles(a: JSONArray): List<Vehicle> = a.objects().mapNotNull { o ->
     val plate = o.optString("plate").ifBlank { o.optString("busNo") }
     if (plate.isBlank() || !lat.isFinite() || !lon.isFinite() || lat !in -90.0..90.0 || lon !in -180.0..180.0 || (lat == 0.0 && lon == 0.0)) null
     else Vehicle(plate, Coordinate(lat, lon), o.optString("nextStopName"),
-        o.optDouble("directionAngle", Double.NaN).takeIf { it.isFinite() && it in 0.0..360.0 })
+        o.optDouble("directionAngle", Double.NaN).takeIf { it.isFinite() && it in 0.0..360.0 },
+        o.optDouble("speed", Double.NaN).takeIf { it.isFinite() && it >= 0 })
 }
 fun parseArrivals(a: JSONArray): List<Arrival> = a.objects().map { o ->
     Arrival(o.optString("busCode"), o.optString("plate"),
         o.optString("remaining_time").takeIf { it.isNotBlank() && it != "null" } ?: "Süre belirtilmedi",
-        o.optString("nextStopName"), o.optString("remaining_distance").takeIf { it.isNotBlank() && it != "null" }.orEmpty())
+        o.optString("nextStopName"), o.optString("remaining_distance").takeIf { it.isNotBlank() && it != "null" }.orEmpty(),
+        o.optInt("timeToStop", -1).takeIf { it >= 0 }, o.optString("lineId"), o.optLong("nextStopId", 0))
 }
 data class SearchResults(val lines: List<Line>, val stops: List<Stop>)
 data class ApiResult(val data: Any, val fetchedAt: String?, val stale: Boolean = false,
