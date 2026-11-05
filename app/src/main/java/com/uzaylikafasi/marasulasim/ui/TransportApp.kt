@@ -63,6 +63,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
         surfaceContainer = Color.White, surfaceContainerLow = Color(0xFFF8FAFC), surfaceContainerHigh = Color.White, surfaceContainerHighest = Color(0xFFF1F5F9),
         outline = Color(0xFFCBD5E1), outlineVariant = Color(0xFFE2E8F0))
     MaterialTheme(colorScheme = colors) {
+        UpdatePrompt()
         val settings by vm.settings.collectAsStateWithLifecycle()
         val snapshots by vm.snapshots.collectAsStateWithLifecycle()
         val search by vm.search.collectAsStateWithLifecycle()
@@ -369,9 +370,9 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
                         Text("Hat veya durak ara", Modifier.padding(start = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
-                MapRoundButton(if (settings.showVehicles) Icons.Outlined.DirectionsBus else Icons.Outlined.BusAlert,
+                if(tracked==null) MapRoundButton(if (settings.showVehicles) Icons.Outlined.DirectionsBus else Icons.Outlined.BusAlert,
                     if (settings.showVehicles) "Otobüsleri gizle" else "Otobüsleri göster", active = settings.showVehicles) { onShowVehicles(!settings.showVehicles) }
-                MapRoundButton(Icons.Outlined.Refresh, "Haritayı yenile") { onRefresh() }
+                if(tracked==null) MapRoundButton(Icons.Outlined.Refresh, "Haritayı yenile") { onRefresh() }
             }
             tracked?.let { t ->
                 Surface(shape = mapCardShape, color = Color.White, shadowElevation = 6.dp) {

@@ -70,6 +70,70 @@ class Release110Test {
             }
         } finally { ArrivalAlerts.remove(context,item.id); context.stopService(Intent(context,ArrivalTrackingService::class.java)) }
     }
+    @Test fun updateApkSignatureAndFileProviderAreCheckedOnAndroid() {
+        val updater=AppUpdates(context)
+        val folder=java.io.File(context.cacheDir,"updates").apply { mkdirs() }
+        val apk=java.io.File(folder,"update.apk")
+        try {
+            java.io.File(context.applicationInfo.sourceDir).copyTo(apk,overwrite=true)
+            updater.verifyPackage(apk,BuildConfig.VERSION_NAME)
+            assertTrue(runCatching { updater.verifyPackage(apk,"99.0.0") }.isFailure)
+            val uri=androidx.core.content.FileProvider.getUriForFile(context,"${context.packageName}.files",apk)
+            assertEquals("content",uri.scheme)
+            context.contentResolver.openInputStream(uri).use { assertNotNull(it); assertTrue(it!!.read()>=0) }
+            val outside=java.io.File(context.cacheDir,"outside.apk").apply { writeText("test") }
+            try { assertTrue(runCatching { androidx.core.content.FileProvider.getUriForFile(context,"${context.packageName}.files",outside) }.isFailure) }
+            finally { outside.delete() }
+            val install=Intent(Intent.ACTION_VIEW).setDataAndType(uri,"application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+            assertNotNull(context.packageManager.resolveActivity(install,0))
+        } finally { apk.delete() }
+    }
+    @Test fun updatePromptAndReadyApkSurviveRecreation() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            var original: UpdateViewModel?=null
+            scenario.onActivity { activity ->
+                original=androidx.lifecycle.ViewModelProvider(activity)[UpdateViewModel::class.java]
+            }
+            // Günlük kontrolün tamamlanması için ana kuyruğu boşalt.
+            InstrumentationRegistry.getInstrumentation().waitForIdleSync()
+            scenario.onActivity {
+                original!!.state.value=UpdateState(release=AppRelease("99.0.0","Deneme sürüm notları","",1,null),file=java.io.File(context.cacheDir,"updates/update.apk"))
+            }
+            assertTrue(device.wait(Until.hasObject(By.text("Yeni sürüm: 99.0.0")),5_000))
+            scenario.recreate()
+            scenario.onActivity { assertSame(original,androidx.lifecycle.ViewModelProvider(it)[UpdateViewModel::class.java]) }
+            assertTrue(device.wait(Until.hasObject(By.text("Yeni sürüm: 99.0.0")),5_000))
+            assertTrue(device.hasObject(By.text("Kur")))
+            device.findObject(By.text("Sonra")).click()
+        }
+    }
+    @Test fun replacingAndRemovingAlertCannotLeaveAnOrphanNotification() {
+        val manager=context.getSystemService(NotificationManager::class.java)
+        val first=ArrivalAlert(id="device-110-first",stop=Stop(6968,"10111","Durak",37.583,36.926),arrival=Arrival("H/1","TEST","2 dk","",lineId="9576"),minutes=10)
+        val second=first.copy(id="device-110-second")
+        try {
+            ArrivalAlerts.add(context,first)
+            ArrivalAlerts.applyDecision(context,evaluateAlert(first,listOf(first.arrival),System.currentTimeMillis()))
+            ArrivalAlerts.add(context,second)
+            assertFalse(manager.activeNotifications.any { it.tag==first.id })
+            ArrivalAlerts.remove(context,second.id)
+            ArrivalAlerts.applyDecision(context,evaluateAlert(second,listOf(second.arrival),System.currentTimeMillis()))
+            assertFalse(manager.activeNotifications.any { it.tag==second.id })
+            assertFalse(ArrivalAlerts.list(context).any { it.id in setOf(first.id,second.id) })
+        } finally { ArrivalAlerts.remove(context,first.id);ArrivalAlerts.remove(context,second.id) }
+    }
+    @Test fun githubApkDownloadRejectsDifferentApplicationAndCleansPartialFile() = kotlinx.coroutines.runBlocking {
+        val client=okhttp3.OkHttpClient()
+        val release=client.newCall(okhttp3.Request.Builder().url("https://api.github.com/repos/uzaylikafasi/maras-ulasim/releases/tags/v1.0.1").build()).execute().use {
+            assertTrue(it.isSuccessful)
+            parseRelease(org.json.JSONObject(it.body!!.string()),"1.0.0",listOf("arm64-v8a"),null)!!
+        }
+        val failure=runCatching { AppUpdates(context).download(release) }.exceptionOrNull()
+        assertNotNull(failure)
+        assertEquals("APK imzası veya sürümü uygulamayla eşleşmiyor.",failure!!.message)
+        assertFalse(java.io.File(context.cacheDir,"updates/update.part.apk").exists())
+        assertFalse(java.io.File(context.cacheDir,"updates/update.apk").exists())
+    }
     @Test fun foregroundServiceExpiresAlertWithoutUsingPhoneGps() {
         assumeTrue("Bildirim izni gerekli",ArrivalAlerts.enabled(context))
         val item=ArrivalAlert(id="device-110-service",stop=Stop(6968,"10111","Durak",37.583,36.926),
