@@ -27,6 +27,7 @@ data class LoadState(val loading: Boolean = false, val result: ApiResult? = null
 class TransportViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as TransportApplication
     private val repository get() = app.repository
+    private val stopLoader by lazy { StopDetails(repository) }
     val settings = app.store.settings.stateIn(viewModelScope, SharingStarted.Eagerly, Settings())
     private val _snapshots = MutableStateFlow<Map<String, LineSnapshot>>(emptyMap())
     val snapshots = _snapshots.asStateFlow()
@@ -155,7 +156,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
         if (todo.isEmpty()) return
         viewModelScope.launch {
             val s = settings.value
-            todo.chunked(4).forEach { batch -> coroutineScope { batch.map { id -> async {
+            todo.chunked(2).forEach { batch -> coroutineScope { batch.map { id -> async {
                 try {
                     val raw = withContext(Dispatchers.IO) { repository.fetch(s.server, s.apiKey, "/v1/lines/$id/stops?direction=1") }.objectData
                     val ids = raw.requiredArray("lineStops").objects().sortedBy { it.optInt("sequenceNo", 0) }.mapNotNull { runCatching { parseStop(it) }.getOrNull() }
@@ -168,8 +169,13 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     }
     fun stopDetails(stop: Stop) {
         detailJob?.cancel(); _detail.value = LoadState(true)
-        detailJob = viewModelScope.launch { _detail.value = load("/v1/stops/${stop.id}", live = true); stopVehicles() }
+        detailJob = viewModelScope.launch { _detail.value = loadStop(stop); stopVehicles() }
     }
+    private suspend fun loadStop(stop: Stop): LoadState = try {
+        LoadState(result = withContext(Dispatchers.IO) { stopLoader.fetch(stop, settings.value) { _detail.value = LoadState(result = it) } })
+    } catch (cancel: CancellationException) { throw cancel }
+    catch (e: Exception) { LoadState(error = e.message ?: "Durak bilgisi alınamadı.") }
+    fun clearJourney() { journeyJob?.cancel(); _journey.value = LoadState() }
     fun clearDetail() { detailJob?.cancel(); _detail.value = LoadState(); _stopVehicles.value = emptyMap() }
     /** Haritada olmayan bir hattın durakları (aramadan açılan hat sayfası için). Önce kayıtlı kopya gösterilir. */
     fun lineStops(line: Line) {
@@ -187,17 +193,21 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     }
     fun plan(path: String) {
         journeyJob?.cancel(); _journey.value = LoadState(true)
-        journeyJob = viewModelScope.launch { _journey.value = load(path) }
+        journeyJob = viewModelScope.launch {
+            val loaded = load(path, live = true)
+            _journey.value = try { loaded.result?.objectData?.let(::parseJourneys); loaded }
+            catch (e: Exception) { LoadState(error = e.message ?: "Rota okunamadı.") }
+        }
     }
     fun nearby(latitude: Double, longitude: Double) = extra("/v1/stops/nearby?latitude=$latitude&longitude=$longitude")
     fun prepareNearby() { extraJob?.cancel(); _extra.value = LoadState(true) }
     fun nearbyFailure(message: String) { _extra.value = LoadState(error = message) }
     suspend fun watchStop(stop: Stop) {
-        delay(15_000)
+        delay(30_000)
         while (currentCoroutineContext().isActive) {
-            _detail.value = load("/v1/stops/${stop.id}", live = true)
+            _detail.value = loadStop(stop)
             stopVehicles()
-            delay(15_000)
+            delay(30_000)
         }
     }
     /** Yaklaşan otobüslerin hatlarının canlı konumları (en çok 6 hat, ikişer ikişer). */
@@ -206,7 +216,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
         val plates = arrivals.map { it.plate }.toSet()
         val s = settings.value
         val found = mutableMapOf<String, Vehicle>()
-        arrivals.map { it.lineId }.filter { it.isNotBlank() }.distinct().take(6).chunked(2).forEach { batch -> coroutineScope { batch.map { id -> async {
+        arrivals.map { it.lineId }.filter { it.isNotBlank() }.distinct().take(3).chunked(2).forEach { batch -> coroutineScope { batch.map { id -> async {
             val path = "/v1/lines/$id/vehicles?direction=1"
             val r = load(path, s, live = true)
             learn(path, r.result)

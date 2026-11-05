@@ -20,7 +20,7 @@ data class Settings(val server: String = DEFAULT_SERVER, val apiKey: String = ""
                     val selected: Set<String> = emptySet(), val plates: Set<String> = emptySet(),
                     val mapLines: List<Line> = emptyList(), val showVehicles: Boolean = true,
                     val favoritesOnly: Boolean = false, val stopPad: Boolean = true, val lightPad: Boolean = true,
-                    val trackOnTap: Boolean = true) {
+                    val trackOnTap: Boolean = false) {
     val favoriteCodes: Set<String> get() = lines.map { it.code }.toSet()
 }
 
@@ -44,7 +44,7 @@ class LocalStore(private val context: Context) {
             // 0.1.2 ve öncesinde harita hatları favorilerde tutuluyordu: ilk açılışta oradan alınır
             p[mapLines]?.let(::decodeLines) ?: decodeLines(p[lines]),
             p[showVehicles] ?: true, p[favoritesOnly] ?: false,
-            p[stopPad] ?: true, p[lightPad] ?: true, p[trackOnTap] ?: true)
+            p[stopPad] ?: true, p[lightPad] ?: true, p[trackOnTap] ?: false)
     }
     suspend fun toggleLine(line: Line) { context.preferences.edit { p ->
         val values = decodeLines(p[lines]).toMutableList()
