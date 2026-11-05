@@ -10,14 +10,14 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-1.0.0-2563EB" alt="Sürüm 1.0.0">
+  <img src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-1.0.1-2563EB" alt="Sürüm 1.0.1">
   <img src="https://img.shields.io/badge/Android-8.0%2B-2563EB" alt="Android 8.0 ve üzeri">
   <a href="LICENSE"><img src="https://img.shields.io/badge/lisans-MIT-2563EB" alt="MIT lisansı"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.0.0">
-    <img src="https://img.shields.io/badge/APK_indir-1.0.0-2563EB?style=for-the-badge" alt="APK indir — sürüm 1.0.0">
+  <a href="https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.0.1">
+    <img src="https://img.shields.io/badge/APK_indir-1.0.1-2563EB?style=for-the-badge" alt="APK indir — sürüm 1.0.1">
   </a>
   <br>
   <a href="https://mithrixa.com/ulasim-api/download">Yedek indirme bağlantısı</a>
@@ -56,7 +56,7 @@
 
 ## Kurulum
 
-1. [1.0.0 sürümünün APK dosyasını indir](https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.0.0). Gerekirse [yedek bağlantıyı](https://mithrixa.com/ulasim-api/download) kullan.
+1. [1.0.1 sürümünün APK dosyasını indir](https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.0.1). Gerekirse [yedek bağlantıyı](https://mithrixa.com/ulasim-api/download) kullan.
 2. İndirdiğin APK dosyasını aç.
 3. Android istediğinde, dosyayı açtığın uygulamaya “bilinmeyen kaynaklardan yükleme” izni ver ve kurulumu tamamla.
 
