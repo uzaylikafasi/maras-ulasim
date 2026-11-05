@@ -198,6 +198,7 @@ private class MapHolder(private val context: Context, private val error: (String
                 style.addImage(CHEVRON, chevronBitmap(), true)
                 greenAreas(style)
                 addAllStops(style)
+                m.addOnCameraIdleListener { m.style?.let(::updateNearbyStops) }
                 addPlaces(style)
                 showLocation(style)
                 error(null); ready?.invoke(); pendingFocus?.let(::focus)
@@ -241,7 +242,9 @@ private class MapHolder(private val context: Context, private val error: (String
         return runCatching {
             val lc = m.locationComponent
             if (!lc.isLocationComponentActivated) lc.activateLocationComponent(
-                org.maplibre.android.location.LocationComponentActivationOptions.builder(context, style).useDefaultLocationEngine(true).build())
+                org.maplibre.android.location.LocationComponentActivationOptions.builder(context, style).useDefaultLocationEngine(true)
+                    .locationEngineRequest(org.maplibre.android.location.engine.LocationEngineRequest.Builder(LOCATION_INTERVAL_MS)
+                        .setFastestInterval(LOCATION_INTERVAL_MS).setPriority(org.maplibre.android.location.engine.LocationEngineRequest.PRIORITY_BALANCED_POWER_ACCURACY).build()).build())
             lc.isLocationComponentEnabled = true
             lc.cameraMode = org.maplibre.android.location.modes.CameraMode.NONE
             lc.renderMode = org.maplibre.android.location.modes.RenderMode.COMPASS
@@ -310,23 +313,14 @@ private class MapHolder(private val context: Context, private val error: (String
     /** Şehirdeki bütün duraklar (uygulamaya gömülü liste): uzaktan küçük nokta, yakınlaşınca adlar. */
     private fun addAllStops(style: Style) {
         if (style.getSource(ALL_STOPS) != null) return
-        val features = JSONArray()
-        runCatching {
-            val stops = JSONObject(context.assets.open("all-stops.json").bufferedReader().use { it.readText() }).getJSONArray("stops")
-            for (i in 0 until stops.length()) {
-                val o = stops.getJSONObject(i)
-                features.put(JSONObject().put("type", "Feature").put("properties", JSONObject().put("id", o.getLong("id"))
-                    .put("code", o.optString("code")).put("name", o.optString("name")).put("lat", o.getDouble("lat")).put("lng", o.getDouble("lng")))
-                    .put("geometry", JSONObject().put("type", "Point").put("coordinates", JSONArray(listOf(o.getDouble("lng"), o.getDouble("lat"))))))
-            }
-        }
-        style.addSource(GeoJsonSource(ALL_STOPS, JSONObject().put("type", "FeatureCollection").put("features", features).toString()))
+        style.addSource(GeoJsonSource(ALL_STOPS, "{\"type\":\"FeatureCollection\",\"features\":[]}"))
+        updateNearbyStops(style)
         // Duraklar turuncu ve iri (Samet/Ömer: beyaz-gri noktalar görünmüyordu); yakında içinde otobüs simgesi
         style.addLayer(CircleLayer(ALL_STOPS, ALL_STOPS).withProperties(
-            circleRadius(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(14, 7f), Expression.stop(16, 12f))),
+            circleRadius(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(8, 3.5f), Expression.stop(14, 7f), Expression.stop(16, 12f))),
             circleColor(STOP_COLOR), circleStrokeColor("#FFFFFF"), circleStrokeWidth(2.5f),
-            circleOpacity(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(14, 0f), Expression.stop(14.6, 1f))),
-            circleStrokeOpacity(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(14, 0f), Expression.stop(14.6, 1f)))).apply { minZoom = 14f; maxZoom = 16f })
+            circleOpacity(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(10, 0.7f), Expression.stop(14.6, 1f))),
+            circleStrokeOpacity(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(10, 0.7f), Expression.stop(14.6, 1f)))).apply { minZoom = 0f; maxZoom = 16f })
         runCatching { style.addImage(ALL_STOPS_ICON, placeBitmap(STOP_COLOR, androidx.compose.material.icons.Icons.Filled.DirectionsBus)) }
         style.addLayer(SymbolLayer(ALL_STOPS_ICON, ALL_STOPS).withProperties(iconImage(ALL_STOPS_ICON),
             iconSize(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(16, 1.25f), Expression.stop(18, 1.7f))),
@@ -334,6 +328,28 @@ private class MapHolder(private val context: Context, private val error: (String
         style.addLayer(SymbolLayer("$ALL_STOPS-ad", ALL_STOPS).withProperties(textField(Expression.get("name")), textSize(10f),
             textColor("#3B4C50"), textHaloColor("#FFFFFF"), textHaloWidth(1.2f), textOffset(arrayOf(0f, 1.5f)), textAnchor(Property.TEXT_ANCHOR_TOP),
             textFont(arrayOf("Noto Sans Regular")), textOptional(true)).apply { minZoom = 16f })
+    }
+
+    private val stopCatalog: List<Stop> by lazy {
+        runCatching { JSONObject(context.assets.open("all-stops.json").bufferedReader().use { it.readText() })
+            .getJSONArray("stops").objects().map { o -> Stop(o.getLong("id"), o.optString("code"), o.optString("name"), o.getDouble("lat"), o.getDouble("lng")) }
+            }.getOrDefault(emptyList())
+    }
+    private fun updateNearbyStops(style: Style) {
+        val m = map ?: return
+        val center = m.cameraPosition.target ?: return
+        val at = Coordinate(center.latitude, center.longitude)
+        val bounds = m.projection.visibleRegion.latLngBounds
+        val corner = Coordinate(bounds.latitudeNorth, bounds.longitudeEast)
+        // Görüş köşesi + kenar payı; boş bölgede menzil en yakın durak bulunana kadar büyür.
+        val radius = maxOf(750.0, distanceMeters(at, corner) * 1.2)
+        val features = JSONArray()
+        stopsInRange(stopCatalog, at, radius).forEach { stop ->
+            features.put(JSONObject().put("type", "Feature").put("properties", JSONObject().put("id", stop.id)
+                .put("code", stop.code).put("name", stop.name).put("lat", stop.latitude).put("lng", stop.longitude))
+                .put("geometry", JSONObject().put("type", "Point").put("coordinates", JSONArray(listOf(stop.longitude, stop.latitude)))))
+        }
+        style.getSourceAs<GeoJsonSource>(ALL_STOPS)?.let { updateSource(it, ALL_STOPS, JSONObject().put("type", "FeatureCollection").put("features", features).toString()) }
     }
 
     /** Parklar, bahçeler ve ormanlık alanlar yeşil görünür (Positron bunları neredeyse gri çiziyor). */
