@@ -97,6 +97,26 @@ class Release110Test {
             finally { outside.delete() }
             val install=Intent(Intent.ACTION_VIEW).setDataAndType(uri,"application/vnd.android.package-archive").addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
             assertNotNull(context.packageManager.resolveActivity(install,0))
+            val appOp=device.executeShellCommand("cmd appops get ${context.packageName} REQUEST_INSTALL_PACKAGES")
+            val originalMode=Regex("REQUEST_INSTALL_PACKAGES: (\\w+)").find(appOp)?.groupValues?.get(1) ?: "default"
+            try {
+                device.executeShellCommand("cmd appops set ${context.packageName} REQUEST_INSTALL_PACKAGES allow")
+                assertTrue(context.packageManager.canRequestPackageInstalls())
+                ActivityScenario.launch(MainActivity::class.java).use {
+                    updater.install(apk)
+                    val chooser=device.wait(Until.findObject(By.text("Paket yükleyici")),2_000)
+                    if(chooser!=null) {
+                        chooser.click()
+                        device.wait(Until.findObject(By.text("Yalnızca bir defa")),2_000)?.click()
+                    }
+                    val shown=device.wait(Until.hasObject(By.text(java.util.regex.Pattern.compile("(?iu)(yükle|kur|install|güncelle)"))),10_000)
+                    device.takeScreenshot(java.io.File(context.filesDir,"android-yukleyici.png"))
+                    device.dumpWindowHierarchy(java.io.File(context.filesDir,"android-yukleyici.xml"))
+                    assertTrue("Android yükleme onayı",shown)
+                    device.pressBack() // Sistem yükleyicisini onaylamadan kapat.
+                }
+            } finally { device.executeShellCommand("cmd appops set ${context.packageName} REQUEST_INSTALL_PACKAGES $originalMode") }
+
         } finally { apk.delete() }
     }
     @Test fun updatePromptAndReadyApkSurviveRecreation() {
