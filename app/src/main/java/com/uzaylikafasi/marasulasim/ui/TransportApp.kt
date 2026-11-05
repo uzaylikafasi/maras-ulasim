@@ -71,6 +71,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
         val journey by vm.journey.collectAsStateWithLifecycle()
         val message by vm.message.collectAsStateWithLifecycle()
         val lineStops by vm.lineStops.collectAsStateWithLifecycle()
+        val tracked by vm.tracked.collectAsStateWithLifecycle()
         val lifecycle = LocalLifecycleOwner.current.lifecycle
         var tab by rememberSaveable { mutableIntStateOf(0) }
         var query by rememberSaveable { mutableStateOf("") }
@@ -95,6 +96,9 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
         LaunchedEffect(lifecycle, openedStop) {
             openedStop?.let { stop -> lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.watchStop(stop) } }
         }
+        LaunchedEffect(lifecycle, tracked?.key) {
+            if (tracked != null) lifecycle.repeatOnLifecycle(Lifecycle.State.STARTED) { vm.watchTracked() }
+        }
         LaunchedEffect(message) { message?.let { snackbar.showSnackbar(it); vm.dismissMessage() } }
         val openStop: (Stop) -> Unit = { openedStop = it; vm.stopDetails(it) }
         // Geri tuşu diğer sekmelerde önce haritaya döner; uygulama yalnız haritadayken kapanır
@@ -117,7 +121,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
         }) { padding ->
             Box(Modifier.padding(padding).fillMaxSize()) {
                 when (tab) {
-                    0 -> MapScreen(settings, snapshots.values.toList(), focusedStop, openStop,
+                    0 -> MapScreen(settings, snapshots.values.toList(), focusedStop, openStop, tracked, vm::stopTracking,
                         onSearch = { tab = 1 }, onLine = { openedLine = it }, onSelect = vm::select, onRemove = vm::removeFromMap,
                         onVehicle = { line, vehicle -> openedVehicle = line to vehicle }, onShowVehicles = vm::showVehicles, onRefresh = vm::refresh,
                         onNearby = { nearbyTitle = null; sheet = "nearby"; vm.prepareNearby(); onNearby() }, onLocate = onLocate,
@@ -194,9 +198,30 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                         if (buses == null) Text("Yaklaşan araç bilgisi okunamadı.")
                         else if (arrivals.isEmpty() && all.isNotEmpty()) EmptyHint(Icons.Outlined.StarOutline, "Favori hatlarından yaklaşan otobüs yok", "${all.size} başka otobüs geliyor. Hepsini görmek için Sadece favorilerim'i kapat.")
                         else if (arrivals.isEmpty()) EmptyHint(Icons.Outlined.Schedule, "Şu an yaklaşan otobüs görünmüyor", "Biraz sonra yenile.")
-                        arrivals.forEachIndexed { index, arrival -> AnimatedListItem(index) { ArrivalCard(arrival) { openedArrival = stop to arrival } } }
+                        val lineStopIds by vm.lineStopIds.collectAsState()
+                        LaunchedEffect(stop.id, arrivals.map { it.lineId }.toSet()) { vm.prefetchLineStops(arrivals.map { it.lineId }.toSet()) }
+                        // Otobüse dokununca (ayarlardan açıksa) haritada yalnız o otobüs izlenir
+                        val track: ((Arrival) -> Unit)? = if (settings.trackOnTap) { a -> vm.track(a, stop); tab = 0; openedStop = null; vm.clearDetail() } else null
+                        val liveBuses by vm.stopVehicles.collectAsState()
+                        val now = System.currentTimeMillis()
+                        val rows = arrivals.map { arrival ->
+                            val lineStopList = lineStopIds[arrival.lineId]
+                            val between = stopsBetween(lineStopList?.map { it.id }, arrival.nextStopId, stop.id)
+                            // Yol: otobüsün konumu (biliniyorsa) → sıradaki durak → … → bu durak; üstündeki ışıklar sayılır
+                            val path = if (between == null || lineStopList == null) emptyList() else {
+                                val from = lineStopList.indexOfFirst { it.id == arrival.nextStopId }
+                                listOfNotNull(liveBuses[arrival.plate]?.coordinate) + lineStopList.subList(from, from + between + 1)
+                                    .mapNotNull { st -> st.latitude?.let { lat -> st.longitude?.let { Coordinate(lat, it) } } }
+                            }
+                            Triple(arrival, between, vm.lightLearner.lightsAlong(path))
+                        // Paylar eklenince sıra değişebilir: en erken gelen üstte
+                        }.sortedBy { (a, between, lights) -> secondsOf(a)?.let { it + padSeconds(between, settings.stopPad, lights, settings.lightPad) } ?: Int.MAX_VALUE }
+                        rows.forEachIndexed { index, (arrival, between, lights) -> AnimatedListItem(index) {
+                            ArrivalCard(arrival, between, lights, vm.lightLearner.waitingAtLight(arrival.plate, now), settings,
+                                { if (settings.trackOnTap && arrival.plate.isNotBlank()) track?.invoke(arrival) else openedArrival = stop to arrival })
+                        } }
                         Freshness(result)
-                        if (arrivals.isNotEmpty()) Text("Süreler kaynağın tahminidir.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (arrivals.isNotEmpty()) Text(if (settings.trackOnTap) "Süreler kaynağın tahminidir. Otobüse dokun, haritada izle." else "Süreler kaynağın tahminidir.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                 }
             }
@@ -206,12 +231,16 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                 text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     arrivalDetails(stop, arrival).forEach { Text(it) }
                     Text("Süreler kaynağın tahminidir.", style = MaterialTheme.typography.bodySmall)
+                    TextButton(onClick = { vm.track(arrival, stop); tab = 0; openedStop = null; openedArrival = null; vm.clearDetail() }) { Text("Haritada izle") }
                 } }, confirmButton = { TextButton(onClick = { openedArrival = null }) { Text("Kapat") } })
         }
         openedVehicle?.let { (line, vehicle) ->
             AlertDialog(onDismissRequest = { openedVehicle = null }, title = { Text("${line.code} · ${vehicle.plate}") },
                 text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     Text(line.directionName)
+                    tracked?.takeIf { it.plate == vehicle.plate }?.let { t ->
+                        TextButton(onClick = { openedVehicle = null; openedArrival = t.stop to Arrival(line.code, vehicle.plate, "Süre belirtilmedi", vehicle.nextStop, lineId = line.id.toString()) }) { Text("Durak bilgileri") }
+                    }
                     Text("Sonraki durak: ${vehicle.nextStop.ifBlank { "Bildirilmedi" }}")
                     OutlinedButton(onClick = { vm.favoritePlate(vehicle.plate) }) {
                         Icon(if (vehicle.plate in settings.plates) Icons.Outlined.Star else Icons.Outlined.StarOutline, null)
@@ -250,6 +279,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
         }
         when (sheet) {
             "reminders" -> ReminderDialog(onDismiss = { sheet = null })
+            "settings" -> SettingsSheet(settings, vm, onDismiss = { sheet = null })
             "announcements", "timetable", "nearby" -> ModalBottomSheet(onDismissRequest = { sheet = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
                 LazyColumn(Modifier.fillMaxWidth().heightIn(max = 650.dp).padding(horizontal = 20.dp), verticalArrangement = Arrangement.spacedBy(12.dp)) {
                     item { Text(when (sheet) { "announcements" -> "Duyurular"; "timetable" -> "Sefer saatleri"; else -> nearbyTitle?.let { "$it · yakındaki duraklar" } ?: "Yakınımdaki duraklar" }, style = MaterialTheme.typography.titleLarge)
@@ -304,7 +334,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
 }
 
 @Composable
-private fun MapScreen(settings: Settings, snapshots: List<LineSnapshot>, focus: Stop?, onStop: (Stop) -> Unit,
+private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focus: Stop?, onStop: (Stop) -> Unit, tracked: TrackedBus?, onStopTracking: () -> Unit,
                       onSearch: () -> Unit, onLine: (Line) -> Unit, onSelect: (Line) -> Unit, onRemove: (Line) -> Unit,
                       onVehicle: (Line, Vehicle) -> Unit, onShowVehicles: (Boolean) -> Unit, onRefresh: () -> Unit,
                       onNearby: () -> Unit, onLocate: ((Double, Double) -> Unit) -> Unit, onPlace: (String, Coordinate) -> Unit) {
@@ -312,9 +342,15 @@ private fun MapScreen(settings: Settings, snapshots: List<LineSnapshot>, focus: 
     var mapError by remember { mutableStateOf<String?>(null) }
     var mapAttempt by remember { mutableIntStateOf(0) }
     var expanded by rememberSaveable { mutableStateOf(false) }
+    // Otobüs izlenirken haritada yalnız o otobüs kalır; öteki hatlar izleme bitince geri gelir
+    val snapshots = tracked?.let { listOf(it.snapshot()) } ?: allSnapshots
+    val trackedBus = tracked?.vehicle()
+    BackHandler(enabled = tracked != null) { onStopTracking() }
     Box(Modifier.fillMaxSize()) {
         key(mapAttempt) {
-            TransportMap(snapshots, focus, settings.plates, settings.showVehicles, locate, Modifier.fillMaxSize(), onStop, onVehicle, onPlace, onError = { mapError = it })
+            TransportMap(snapshots, focus, settings.plates, tracked != null || settings.showVehicles, locate, Modifier.fillMaxSize(),
+                follow = tracked?.let { t -> trackedBus?.let { it.coordinate to t.stop } }, onStopClick = onStop, onVehicleClick = onVehicle,
+                onPlaceClick = onPlace, onError = { mapError = it })
         }
         Column(Modifier.align(Alignment.TopStart).padding(12.dp).widthIn(max = 620.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
@@ -328,9 +364,25 @@ private fun MapScreen(settings: Settings, snapshots: List<LineSnapshot>, focus: 
                     if (settings.showVehicles) "Otobüsleri gizle" else "Otobüsleri göster", active = settings.showVehicles) { onShowVehicles(!settings.showVehicles) }
                 MapRoundButton(Icons.Outlined.Refresh, "Haritayı yenile") { onRefresh() }
             }
+            tracked?.let { t ->
+                Surface(shape = mapCardShape, color = Color.White, shadowElevation = 6.dp) {
+                    Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                        Surface(color = hex(badgeColorFor(t.line.code)), contentColor = Color.White, shape = RoundedCornerShape(10.dp)) {
+                            Text(t.line.code, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
+                        }
+                        Column(Modifier.weight(1f).padding(start = 10.dp)) {
+                            Text("${t.plate} izleniyor", fontWeight = FontWeight.SemiBold)
+                            Text(t.error ?: trackedBus?.let { "→ ${t.stop.name}" + it.nextStop.takeIf { n -> n.isNotBlank() && n != t.stop.name }?.let { n -> " · sonraki: $n" }.orEmpty() } ?: "Konum alınıyor…",
+                                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
+                                overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
+                        }
+                        IconButton(onClick = onStopTracking) { Icon(Icons.Outlined.Close, "İzlemeyi bitir") }
+                    }
+                }
+            }
             // Hat başına tek düğme: gidiş ve dönüş birlikte açılıp kapanır
             val groups = settings.mapLines.groupBy { it.code }
-            if (groups.isNotEmpty()) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            if (groups.isNotEmpty() && tracked == null) LazyRow(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 items(groups.keys.toList(), key = { it }) { code ->
                     val line = groups.getValue(code).first()
                     val on = settings.isOnMap(code)
@@ -463,8 +515,10 @@ private fun LineBadgeButton(code: String, favorite: Boolean = false, onLongClick
 }
 
 @Composable
-private fun ArrivalCard(arrival: Arrival, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant, modifier = Modifier.fillMaxWidth()) {
+private fun ArrivalCard(arrival: Arrival, stopsBetween: Int? = null, lightsAhead: Int = 0, waitingAtLight: Boolean = false,
+                        settings: Settings = Settings(), onClick: (() -> Unit)? = null) {
+    Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant,
+        modifier = Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clip(RoundedCornerShape(18.dp)).clickable(onClickLabel = "Otobüs bilgileri", onClick = onClick) else Modifier)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
             Surface(shape = RoundedCornerShape(12.dp), color = hex(badgeColorFor(arrival.code)), contentColor = Color.White) {
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
@@ -473,7 +527,15 @@ private fun ArrivalCard(arrival: Arrival, onClick: () -> Unit) {
                 }
             }
             Column(Modifier.weight(1f).padding(start = 12.dp)) {
-                Text(arrival.remaining, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                val base = secondsOf(arrival)
+                val extra = if (base == null) 0 else padSeconds(stopsBetween, settings.stopPad, lightsAhead, settings.lightPad)
+                Text(if (base != null && extra > 0) formatDuration(base + extra) else arrival.remaining, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
+                if (base != null && extra > 0) Text(listOfNotNull("Kaynak ${arrival.remaining}",
+                    stopsBetween?.takeIf { settings.stopPad && it > 0 }?.let { "$it durak × $SECONDS_PER_STOP sn" },
+                    lightsAhead.takeIf { settings.lightPad && it > 0 }?.let { "$it ışık × $LIGHT_WAIT_SECONDS sn" }).joinToString(" · "),
+                    style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                if (waitingAtLight && settings.lightPad) Text("Kırmızı ışıkta bekliyor", style = MaterialTheme.typography.labelMedium,
+                    fontWeight = FontWeight.SemiBold, color = Color(0xFFDC2626))
                 Text(listOfNotNull(arrival.distance.takeIf { it.isNotBlank() }, arrival.plate.takeIf { it.isNotBlank() }).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (arrival.nextStop.isNotBlank()) Text("Sonraki durak: ${arrival.nextStop}", style = MaterialTheme.typography.bodySmall,
@@ -809,6 +871,7 @@ private fun Timetables(result: ApiResult) {
 @Composable
 private fun MoreScreen(onSheet: (String) -> Unit) {
     Column(Modifier.padding(horizontal = 16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        MenuRow(Icons.Outlined.Settings, "Ayarlar", "Özellikleri aç veya kapat") { onSheet("settings") }
         MenuRow(Icons.Outlined.Campaign, "Duyurular", "Yol ve güzergâh değişiklikleri") { onSheet("announcements") }
         MenuRow(Icons.Outlined.NotificationsActive, "Hatırlatmalar", "Okul, iş ve dershane saatlerin") { onSheet("reminders") }
         val uri = LocalUriHandler.current
@@ -820,6 +883,32 @@ private fun MoreScreen(onSheet: (String) -> Unit) {
         Text("Bağımsız bir ulaşım uygulamasıdır. Belediye veya Kahramankart’ın resmî uygulaması değildir.", style = MaterialTheme.typography.bodySmall)
         Text("Harita: MapLibre · OpenFreeMap · OpenStreetMap\nHat ve sefer verileri: Pallium / Kahramankart", style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
     }
+}
+/** Özellik anahtarları; Diğer > Ayarlar. Seçimler cihazda saklanır. */
+@Composable
+private fun SettingsSheet(settings: Settings, vm: TransportViewModel, onDismiss: () -> Unit) {
+    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
+        Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
+            Text("Ayarlar", style = MaterialTheme.typography.titleLarge)
+            Text("Varış süresi", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+            SettingSwitch(Icons.Outlined.Timer, "Durak payı", "Arada kalan her durak için $SECONDS_PER_STOP sn eklenir", settings.stopPad, vm::stopPad)
+            val known = remember { vm.lightLearner.lights().size }
+            SettingSwitch(Icons.Outlined.Traffic, "Kırmızı ışık payı",
+                "Yoldaki her ışık için $LIGHT_WAIT_SECONDS sn eklenir. Işıklar, durak dışında duran otobüslerden öğrenilir ($known ışık biliniyor)",
+                settings.lightPad, vm::lightPad)
+            Text("Harita", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+            SettingSwitch(Icons.Outlined.DirectionsBus, "Otobüsleri göster", "Seçili hatların canlı otobüsleri", settings.showVehicles, vm::showVehicles)
+            SettingSwitch(Icons.Outlined.MyLocation, "Dokununca otobüsü izle", "Duraktaki otobüse dokununca haritada yalnız o görünür", settings.trackOnTap, vm::trackOnTap)
+            Text("Durak", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+            SettingSwitch(Icons.Outlined.StarOutline, "Sadece favorilerim", "Durakta yalnız favori hatların otobüsleri", settings.favoritesOnly, vm::favoritesOnly)
+        }
+    }
+}
+@Composable
+private fun SettingSwitch(icon: ImageVector, title: String, subtitle: String, checked: Boolean, onChange: (Boolean) -> Unit) {
+    ListItem(headlineContent = { Text(title) }, supportingContent = { Text(subtitle) }, leadingContent = { Icon(icon, null) },
+        trailingContent = { Switch(checked = checked, onCheckedChange = null) },
+        modifier = Modifier.clickable(role = androidx.compose.ui.semantics.Role.Switch) { onChange(!checked) })
 }
 @Composable
 private fun MenuRow(icon: ImageVector, title: String, subtitle: String, click: () -> Unit) {

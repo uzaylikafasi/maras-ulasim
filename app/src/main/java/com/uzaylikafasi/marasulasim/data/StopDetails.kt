@@ -52,7 +52,7 @@ class StopDetails(private val repository: TransportRepository) {
                     if (live.isOld()) continue
                     terminalArrivals(stop, candidate.line, candidate.stops, candidate.incomingStops, parseVehicles(live.arrayData), parseArrivals(buses)).forEach { a ->
                         buses.put(JSONObject().put("busCode", a.code).put("plate", a.plate).put("remaining_time", a.remaining)
-                            .put("nextStopName", a.nextStop).put("busName", a.name).put("directionName", a.direction).put("state", a.state))
+                            .put("lineId", candidate.line.id.toString()).put("nextStopName", a.nextStop).put("busName", a.name).put("directionName", a.direction).put("state", a.state))
                     }
                 }
             }
