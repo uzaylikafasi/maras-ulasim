@@ -287,7 +287,8 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
         when (sheet) {
             "notifications" -> TrackingSheet(onDismiss={ sheet=null },onView={ item ->
                 vm.track(item.arrival,item.stop); tab=0; sheet=null
-            },onReminders={ sheet="reminders" })
+            },onReminders={ sheet="reminders" },onAdd={ sheet="add-bus" })
+            "add-bus" -> AddTrackingSheet(onDismiss={ sheet="notifications" },onChoose={ stop,arrival -> sheet=null; alertSelection=stop to arrival })
             "reminders" -> ReminderDialog(onDismiss = { sheet = null })
             "settings" -> SettingsSheet(settings, vm, onDismiss = { sheet = null })
             "announcements", "timetable", "nearby" -> ModalBottomSheet(onDismissRequest = { sheet = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -375,19 +376,19 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
                 if(tracked==null) MapRoundButton(Icons.Outlined.Refresh, "Haritayı yenile") { onRefresh() }
             }
             tracked?.let { t ->
-                Surface(shape = mapCardShape, color = Color.White, shadowElevation = 6.dp) {
-                    Row(Modifier.padding(start = 14.dp, end = 4.dp, top = 6.dp, bottom = 6.dp), verticalAlignment = Alignment.CenterVertically) {
+                Surface(modifier = Modifier.widthIn(max = 420.dp), shape = mapCardShape, color = Color.White, shadowElevation = 4.dp) {
+                    Row(Modifier.padding(start = 10.dp, end = 2.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                         Surface(color = hex(badgeColorFor(t.line.code)), contentColor = Color.White, shape = RoundedCornerShape(10.dp)) {
-                            Text(t.line.code, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), fontWeight = FontWeight.Bold)
+                            Text(t.line.code, Modifier.padding(horizontal = 6.dp, vertical = 3.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                         }
                         Column(Modifier.weight(1f).padding(start = 10.dp)) {
-                            Text("${t.plate} izleniyor", fontWeight = FontWeight.SemiBold)
+                            Text(t.plate, style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.SemiBold, maxLines = 1, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             Text(t.error ?: trackedBus?.let { "→ ${t.stop.name}" + it.nextStop.takeIf { n -> n.isNotBlank() && n != t.stop.name }?.let { n -> " · sonraki: $n" }.orEmpty() } ?: "Konum alınıyor…",
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
-                        IconButton(onClick = { onTrackedInfo(t) }) { Icon(Icons.Outlined.Info, "Otobüs bilgileri") }
-                        IconButton(onClick = onStopTracking) { Icon(Icons.Outlined.Close, "İzlemeyi bitir") }
+                        IconButton(onClick = { onTrackedInfo(t) }) { Icon(Icons.Outlined.Info, "Otobüs bilgileri", Modifier.size(20.dp)) }
+                        IconButton(onClick = onStopTracking) { Icon(Icons.Outlined.Close, "İzlemeyi bitir", Modifier.size(20.dp)) }
                     }
                 }
             }
