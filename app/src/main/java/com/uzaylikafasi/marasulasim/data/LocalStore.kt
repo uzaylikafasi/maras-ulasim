@@ -19,7 +19,8 @@ data class Settings(val server: String = DEFAULT_SERVER, val apiKey: String = ""
                     val lines: List<Line> = emptyList(), val stops: List<Stop> = emptyList(),
                     val selected: Set<String> = emptySet(), val plates: Set<String> = emptySet(),
                     val mapLines: List<Line> = emptyList(), val showVehicles: Boolean = true,
-                    val favoritesOnly: Boolean = false) {
+                    val favoritesOnly: Boolean = false, val stopPad: Boolean = true, val lightPad: Boolean = true,
+                    val trackOnTap: Boolean = false) {
     val favoriteCodes: Set<String> get() = lines.map { it.code }.toSet()
 }
 
@@ -31,6 +32,9 @@ class LocalStore(private val context: Context) {
     private val mapLines = stringPreferencesKey("map_lines")
     private val showVehicles = androidx.datastore.preferences.core.booleanPreferencesKey("show_vehicles")
     private val favoritesOnly = androidx.datastore.preferences.core.booleanPreferencesKey("stop_favorites_only")
+    private val stopPad = androidx.datastore.preferences.core.booleanPreferencesKey("stop_pad")
+    private val lightPad = androidx.datastore.preferences.core.booleanPreferencesKey("light_pad")
+    private val trackOnTap = androidx.datastore.preferences.core.booleanPreferencesKey("track_on_tap")
     val settings = context.preferences.data.catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }.map { p ->
         // 1.0: sunucu sabit (Ömer: "adres sabit kalsın"); eski özel adres ve anahtar artık kullanılmaz
         Settings(DEFAULT_SERVER, "",
@@ -39,7 +43,8 @@ class LocalStore(private val context: Context) {
             runCatching { JSONArray(p[plates] ?: "[]").texts().toSet() }.getOrDefault(emptySet()),
             // 0.1.2 ve öncesinde harita hatları favorilerde tutuluyordu: ilk açılışta oradan alınır
             p[mapLines]?.let(::decodeLines) ?: decodeLines(p[lines]),
-            p[showVehicles] ?: true, p[favoritesOnly] ?: false)
+            p[showVehicles] ?: true, p[favoritesOnly] ?: false,
+            p[stopPad] ?: true, p[lightPad] ?: true, p[trackOnTap] ?: false)
     }
     suspend fun toggleLine(line: Line) { context.preferences.edit { p ->
         val values = decodeLines(p[lines]).toMutableList()
@@ -85,6 +90,9 @@ class LocalStore(private val context: Context) {
     } }
     suspend fun setShowVehicles(value: Boolean) { context.preferences.edit { it[showVehicles] = value } }
     suspend fun setFavoritesOnly(value: Boolean) { context.preferences.edit { it[favoritesOnly] = value } }
+    suspend fun setStopPad(value: Boolean) { context.preferences.edit { it[stopPad] = value } }
+    suspend fun setLightPad(value: Boolean) { context.preferences.edit { it[lightPad] = value } }
+    suspend fun setTrackOnTap(value: Boolean) { context.preferences.edit { it[trackOnTap] = value } }
     /** Hat numarasını (bütün yönleriyle) favorilerden çıkarır. */
     suspend fun removeLineCode(code: String) { context.preferences.edit { p ->
         val values = decodeLines(p[lines])

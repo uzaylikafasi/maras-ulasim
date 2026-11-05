@@ -32,7 +32,16 @@ class TransportApi(private val client: OkHttpClient = OkHttpClient.Builder()
     .callTimeout(20, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false)
     .retryOnConnectionFailure(false).build()) {
 
+    // Uygulamanın tüm ön plan/arka plan sorguları aynı kapıdan geçer: en çok 60 başlangıç/dk.
+    private val requestGate = kotlinx.coroutines.sync.Mutex()
+    private var nextRequest = 0L
     suspend fun get(base: String, key: String, path: String): String {
+        requestGate.lock()
+        try {
+            val wait = nextRequest - System.nanoTime() / 1_000_000
+            if (wait > 0) kotlinx.coroutines.delay(wait)
+            nextRequest = System.nanoTime() / 1_000_000 + 1_000
+        } finally { requestGate.unlock() }
         val accessKey = validatedApiKey(key)
         val url = (base + path).toHttpUrlOrNull() ?: throw DataException("Sunucu adresi geçersiz.")
         val request = Request.Builder().url(url).header("Accept", "application/json")
