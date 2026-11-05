@@ -61,7 +61,7 @@ class DeviceSmokeTest {
                 clickText("Yolculuk")
                 assertTrue(device.wait(Until.hasObject(By.text("Nasıl giderim?")), 5_000))
                 clickText("Diğer")
-                assertTrue(device.wait(Until.hasObject(By.text("Hatırlatmalar")), 5_000))
+                assertTrue(device.wait(Until.hasObject(By.text("Bildirimler")), 5_000))
                 assertTrue(device.wait(Until.hasObject(By.text("Uygulamanın kaynak kodu")), 5_000))
                 assertFalse(device.hasObject(By.text("Bağlantı ayarları")))
                 clickText("Harita")

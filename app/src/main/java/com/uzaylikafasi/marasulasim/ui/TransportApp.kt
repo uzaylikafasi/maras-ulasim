@@ -54,7 +54,7 @@ private val stopSaver = Saver<Stop?, String>(save = { it?.json()?.toString() ?: 
 })
 
 @Composable
-fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Double, Double) -> Unit) -> Unit) {
+fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Double, Double) -> Unit) -> Unit, showTracking: Boolean = false, onTrackingHandled: () -> Unit = {}) {
     // Açık ve renkli tema (Ömer'in seçimi): ulaşım mavisi, beyaz yüzeyler, parlak hat renkleri
     val colors = lightColorScheme(primary = teal, onPrimary = Color.White, primaryContainer = Color(0xFFDBEAFE), onPrimaryContainer = Color(0xFF1E3A8A),
         secondary = Color(0xFF0891B2), secondaryContainer = Color(0xFFCFFAFE), onSecondaryContainer = Color(0xFF164E63),
@@ -79,6 +79,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
         var openedStop by remember { mutableStateOf<Stop?>(null) }
         var openedLine by remember { mutableStateOf<Line?>(null) }
         var openedArrival by remember { mutableStateOf<Pair<Stop, Arrival>?>(null) }
+        var alertSelection by remember { mutableStateOf<Pair<Stop, Arrival>?>(null) }
         var choosingOrigin by rememberSaveable { mutableStateOf<Boolean?>(null) }
         var openedVehicle by remember { mutableStateOf<Pair<Line, Vehicle>?>(null) }
         val journeyNow = ZonedDateTime.now(ZoneId.of("Europe/Istanbul"))
@@ -89,6 +90,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
         var destination by rememberSaveable(stateSaver = stopSaver) { mutableStateOf<Stop?>(null) }
         var sheet by rememberSaveable { mutableStateOf<String?>(null) }
         var nearbyTitle by rememberSaveable { mutableStateOf<String?>(null) }
+        LaunchedEffect(showTracking) { if(showTracking) { sheet="notifications"; tab=4; onTrackingHandled() } }
         val snackbar = remember { SnackbarHostState() }
         val appContext = LocalContext.current.applicationContext
         val stopLines = remember { stopLineCodes(appContext) }
@@ -122,6 +124,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
             Box(Modifier.padding(padding).fillMaxSize()) {
                 when (tab) {
                     0 -> MapScreen(settings, snapshots.values.toList(), focusedStop, openStop, tracked, vm::stopTracking,
+                        onTrackedInfo = { t -> openedArrival=t.stop to Arrival(t.line.code,t.plate,"Süre belirtilmedi",t.vehicle()?.nextStop.orEmpty(),name=t.line.name,direction=t.line.directionName,lineId=t.line.id.toString()) },
                         onSearch = { tab = 1 }, onLine = { openedLine = it }, onSelect = vm::select, onRemove = vm::removeFromMap,
                         onVehicle = { line, vehicle -> openedVehicle = line to vehicle }, onShowVehicles = vm::showVehicles, onRefresh = vm::refresh,
                         onNearby = { nearbyTitle = null; sheet = "nearby"; vm.prepareNearby(); onNearby() }, onLocate = onLocate,
@@ -199,7 +202,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                         else if (arrivals.isEmpty() && all.isNotEmpty()) EmptyHint(Icons.Outlined.StarOutline, "Favori hatlarından yaklaşan otobüs yok", "${all.size} başka otobüs geliyor. Hepsini görmek için Sadece favorilerim'i kapat.")
                         else if (arrivals.isEmpty()) EmptyHint(Icons.Outlined.Schedule, "Şu an yaklaşan otobüs görünmüyor", "Biraz sonra yenile.")
                         val lineStopIds by vm.lineStopIds.collectAsState()
-                        LaunchedEffect(stop.id, arrivals.map { it.lineId }.toSet()) { vm.prefetchLineStops(arrivals.map { it.lineId }.toSet()) }
+                        LaunchedEffect(stop.id, arrivals.map { it.lineId }.toSet(),settings.stopPad,settings.lightPad) { if(settings.stopPad || settings.lightPad) vm.prefetchLineStops(arrivals.map { it.lineId }.toSet()) }
                         // Otobüse dokununca (ayarlardan açıksa) haritada yalnız o otobüs izlenir
                         val track: ((Arrival) -> Unit)? = if (settings.trackOnTap) { a -> vm.track(a, stop); tab = 0; openedStop = null; vm.clearDetail() } else null
                         val liveBuses by vm.stopVehicles.collectAsState()
@@ -226,10 +229,13 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                 }
             }
         }
+        alertSelection?.let { (stop, arrival) -> ArrivalAlertDialog(stop,arrival) { alertSelection=null } }
         openedArrival?.let { (stop, arrival) ->
             AlertDialog(onDismissRequest = { openedArrival = null }, title = { Text("${arrival.code} · ${arrival.plate.ifBlank { "Plaka bildirilmedi" }}") },
                 text = { Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
                     arrivalDetails(stop, arrival).forEach { Text(it) }
+                    TextButton(enabled=arrival.plate.isNotBlank() && arrival.lineId.toLongOrNull()!=null,
+                        onClick={ alertSelection=stop to arrival; openedArrival=null }) { Text("Varış uyarısı") }
                     Text("Süreler kaynağın tahminidir.", style = MaterialTheme.typography.bodySmall)
                     TextButton(onClick = { vm.track(arrival, stop); tab = 0; openedStop = null; openedArrival = null; vm.clearDetail() }) { Text("Haritada izle") }
                 } }, confirmButton = { TextButton(onClick = { openedArrival = null }) { Text("Kapat") } })
@@ -278,6 +284,9 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
             }
         }
         when (sheet) {
+            "notifications" -> TrackingSheet(onDismiss={ sheet=null },onView={ item ->
+                vm.track(item.arrival,item.stop); tab=0; sheet=null
+            },onReminders={ sheet="reminders" })
             "reminders" -> ReminderDialog(onDismiss = { sheet = null })
             "settings" -> SettingsSheet(settings, vm, onDismiss = { sheet = null })
             "announcements", "timetable", "nearby" -> ModalBottomSheet(onDismissRequest = { sheet = null }, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
@@ -334,7 +343,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
 }
 
 @Composable
-private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focus: Stop?, onStop: (Stop) -> Unit, tracked: TrackedBus?, onStopTracking: () -> Unit,
+private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focus: Stop?, onStop: (Stop) -> Unit, tracked: TrackedBus?, onStopTracking: () -> Unit, onTrackedInfo: (TrackedBus) -> Unit,
                       onSearch: () -> Unit, onLine: (Line) -> Unit, onSelect: (Line) -> Unit, onRemove: (Line) -> Unit,
                       onVehicle: (Line, Vehicle) -> Unit, onShowVehicles: (Boolean) -> Unit, onRefresh: () -> Unit,
                       onNearby: () -> Unit, onLocate: ((Double, Double) -> Unit) -> Unit, onPlace: (String, Coordinate) -> Unit) {
@@ -376,6 +385,7 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
                                 style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, maxLines = 1,
                                 overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                         }
+                        IconButton(onClick = { onTrackedInfo(t) }) { Icon(Icons.Outlined.Info, "Otobüs bilgileri") }
                         IconButton(onClick = onStopTracking) { Icon(Icons.Outlined.Close, "İzlemeyi bitir") }
                     }
                 }
@@ -873,7 +883,7 @@ private fun MoreScreen(onSheet: (String) -> Unit) {
     Column(Modifier.padding(horizontal = 16.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(8.dp)) {
         MenuRow(Icons.Outlined.Settings, "Ayarlar", "Özellikleri aç veya kapat") { onSheet("settings") }
         MenuRow(Icons.Outlined.Campaign, "Duyurular", "Yol ve güzergâh değişiklikleri") { onSheet("announcements") }
-        MenuRow(Icons.Outlined.NotificationsActive, "Hatırlatmalar", "Okul, iş ve dershane saatlerin") { onSheet("reminders") }
+        MenuRow(Icons.Outlined.NotificationsActive, "Bildirimler", "Takip, varış uyarıları ve saatli hatırlatmalar") { onSheet("notifications") }
         val uri = LocalUriHandler.current
         MenuRow(Icons.Outlined.Code, "Uygulamanın kaynak kodu", "GitHub · maras-ulasim") { uri.openUri(REPO_URL) }
         MenuRow(Icons.Outlined.Api, "Ulaşım API'si", "Kendi uygulaman için ücretsiz kullan") { uri.openUri(API_DOCS_URL) }

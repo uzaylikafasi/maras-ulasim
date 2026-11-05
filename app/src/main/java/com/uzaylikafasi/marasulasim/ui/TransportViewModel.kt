@@ -102,16 +102,22 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     private val _tracked = MutableStateFlow<TrackedBus?>(null)
     val tracked = _tracked.asStateFlow()
     /** Yaklaşan otobüse dokununca: hat kodu ve gidilen durakla o plaka izlenir. */
-    fun track(arrival: Arrival, stop: Stop) {
-        val id = arrival.lineId.toLongOrNull() ?: return notify("Bu otobüsün hattı bildirilmedi, izlenemiyor.")
-        _tracked.value = TrackedBus(Line(id, 1, arrival.code, "", stop.name), arrival.plate, stop)
+    fun track(arrival: Arrival, stop: Stop) = action {
+        val id = arrival.lineId.toLongOrNull() ?: return@action notify("Bu otobüsün hattı bildirilmedi, izlenemiyor.")
+        val s = settings.value
+        val known = (s.mapLines + s.lines).firstOrNull { it.id == id }
+        val line = known ?: parseSearch(withContext(Dispatchers.IO) {
+            repository.fetch(s.server,s.apiKey,searchPath(arrival.code))
+        }.objectData).lines.firstOrNull { it.id == id }
+        if(line==null) return@action notify("Otobüsün yönü doğrulanamadı. Yeniden dene.")
+        _tracked.value = TrackedBus(line, arrival.plate, stop)
     }
     fun stopTracking() { _tracked.value = null }
     suspend fun watchTracked() {
         while (currentCoroutineContext().isActive) {
             val t = _tracked.value ?: return
             val s = settings.value
-            val path = "/v1/lines/${t.line.id}/vehicles?direction=1"
+            val path = "/v1/lines/${t.line.id}/vehicles?direction=${t.line.direction}"
             val r = load(path, s, live = true)
             learn(path, r.result)
             _tracked.update { if (it?.key != t.key) it else it.copy(vehicles = r.result, error = r.error
@@ -212,6 +218,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     }
     /** Yaklaşan otobüslerin hatlarının canlı konumları (en çok 6 hat, ikişer ikişer). */
     private suspend fun stopVehicles() {
+        if(!settings.value.lightPad) { _stopVehicles.value=emptyMap(); return }
         val arrivals = runCatching { _detail.value.result?.objectData?.requiredArray("buses")?.let(::parseArrivals) }.getOrNull().orEmpty()
         val plates = arrivals.map { it.plate }.toSet()
         val s = settings.value
@@ -233,7 +240,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
         settings.map { Triple(it.server, it.apiKey, it.mapLines.filter { line -> line.key in it.selected } to it.showVehicles) }
             .distinctUntilChanged().collectLatest {
                 while (currentCoroutineContext().isActive) {
-                    refreshLines()
+                    if(_tracked.value==null) refreshLines()
                     delay(15_000)
                 }
             }

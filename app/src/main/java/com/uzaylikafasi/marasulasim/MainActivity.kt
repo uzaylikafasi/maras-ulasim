@@ -1,6 +1,10 @@
 package com.uzaylikafasi.marasulasim
 
 import android.Manifest
+import android.content.Intent
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.setValue
+import androidx.compose.runtime.mutableStateOf
 import android.content.pm.PackageManager
 import android.location.Location
 import android.location.LocationListener
@@ -20,6 +24,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 
 class MainActivity : ComponentActivity() {
+    private var showTracking by mutableStateOf(false)
     private val locationRequest = Mutex()
     private var locationGranted: ((Boolean) -> Unit)? = null
     private val locationPermission = registerForActivityResult(ActivityResultContracts.RequestMultiplePermissions()) { result ->
@@ -27,6 +32,8 @@ class MainActivity : ComponentActivity() {
     }
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        showTracking=intent.getBooleanExtra("show_tracking",false)
+        if(ArrivalAlerts.list(this).any { it.active } && ArrivalAlerts.enabled(this)) runCatching { ArrivalAlerts.start(this) }
         // Açık tema: durum çubuğu ve gezinme çubuğu simgeleri koyu
         enableEdgeToEdge(statusBarStyle = androidx.activity.SystemBarStyle.light(android.graphics.Color.TRANSPARENT, android.graphics.Color.TRANSPARENT),
             navigationBarStyle = androidx.activity.SystemBarStyle.light(android.graphics.Color.WHITE, android.graphics.Color.WHITE))
@@ -61,8 +68,12 @@ class MainActivity : ComponentActivity() {
                         else vm.nearby(location.latitude, location.longitude)
                     }
                 } }
-            })
+            }, showTracking=showTracking,onTrackingHandled={ showTracking=false })
         }
+    }
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent); setIntent(intent)
+        showTracking=intent.getBooleanExtra("show_tracking",false)
     }
     private fun locationOn(): Boolean {
         val manager = getSystemService(LocationManager::class.java)
