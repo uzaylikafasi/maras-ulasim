@@ -72,6 +72,19 @@ class DeviceSmokeTest {
             if (favorite != wasFavorite) runBlocking { app.store.toggleLine(suggestedLine) }
         }
     }
+    @Test fun journeyDaySurvivesSearchAndRecreation() {
+        ActivityScenario.launch(MainActivity::class.java).use { scenario ->
+            clickText("Yolculuk")
+            clickText("Pzt")
+            assertTrue(device.findObject(By.text("Pzt")).parent.isChecked)
+            clickText("Ara")
+            clickText("Yolculuk")
+            assertTrue("Search must not reset the selected journey day", device.findObject(By.text("Pzt")).parent.isChecked)
+            scenario.recreate()
+            assertTrue(device.wait(Until.hasObject(By.text("Nasıl giderim?")), 5_000))
+            assertTrue(device.findObject(By.text("Pzt")).parent.isChecked)
+        }
+    }
     @Test fun widgetIsRegisteredAndItsLayoutInflates() {
         val component = ComponentName(context, FavoritesWidget::class.java)
         val providers = AppWidgetManager.getInstance(context).installedProviders
