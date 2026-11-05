@@ -407,26 +407,24 @@ private class MapHolder(private val context: Context, private val error: (String
         snapshots.forEach { snapshot ->
             val key = snapshot.line.key.replace(':', '-')
             val color = lineColorFor(snapshot.line.code, codes)
-            // Aynı renk; dönüş güzergâhı kesikli çizgiyle ayrılır
-            val donus = snapshot.line.direction != 1
-            val shape = snapshot.shape?.data as? JSONObject
-            // Aynı yoldan geçen farklı hatlar da ayrı şeritte: her hat kodu biraz daha dışa kayar
-            val lane = codes.indexOf(snapshot.line.code).coerceAtLeast(0)
-            val offset = Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(12, 0f), Expression.stop(16, 4f + lane * 7f))
+            val stops = runCatching { snapshot.stops?.objectData?.requiredArray("lineStops")?.objects()?.map(::parseStop) }.getOrNull().orEmpty()
+            val shape = runCatching { (snapshot.shape?.data as? JSONObject)?.let { renderedShape(it, stops) } }.getOrNull()
+            // Çizgiyi yol ekseninde tut: kaydırma keskin köşelerde sivrilmelere yol açıyor.
+            val offset = 0f
             if (shape != null) {
                 val sourceId = "route-source-$key"
                 val source = style.getSourceAs<GeoJsonSource>(sourceId)
                 if (source == null) {
                     style.addSource(GeoJsonSource(sourceId, shape.toString()))
                     // Güzergâh durakların altında, haritanın üstünde: beyaz kenarlı kalın çizgi ve yön okları
-                    // İki yön aynı yolda üst üste binmesin: her yön kendi sağına kayar
+                    // Duraklar ayrı kaynakta kalır; güzergâh bu noktalara bağlanmaz.
                     val width = Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(10, 3f), Expression.stop(16, 8f))
                     val casing = LineLayer("route-casing-$key", sourceId).withProperties(lineColor("#FFFFFF"),
                         lineWidth(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(10, 5f), Expression.stop(16, 12f))),
                         lineOffset(offset), lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND))
                     val route = LineLayer("route-$key", sourceId).withProperties(lineColor(color), lineWidth(width), lineOffset(offset),
-                        lineCap(if (donus) Property.LINE_CAP_BUTT else Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND))
-                    if (donus) route.setProperties(lineDasharray(arrayOf(1.6f, 1f)))
+                        lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND))
+
                     val arrows = SymbolLayer("route-arrows-$key", sourceId).withProperties(symbolPlacement(Property.SYMBOL_PLACEMENT_LINE),
                         symbolSpacing(90f), iconImage(CHEVRON), iconColor("#FFFFFF"), iconAllowOverlap(true), iconIgnorePlacement(true),
                         iconSize(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(13, 0.4f), Expression.stop(16, 0.6f)))).apply { minZoom = 13f }
@@ -439,7 +437,6 @@ private class MapHolder(private val context: Context, private val error: (String
                 style.getLayerAs<LineLayer>("route-$key")?.setProperties(lineColor(color), lineOffset(offset))
                 style.getLayerAs<LineLayer>("route-casing-$key")?.setProperties(lineOffset(offset))
             }
-            val stops = runCatching { snapshot.stops?.objectData?.requiredArray("lineStops")?.objects()?.map(::parseStop) }.getOrNull().orEmpty()
             stops.forEach { stopIndex[it.id] = it }
             val features = JSONArray()
             stops.filter { it.latitude != null && it.longitude != null }.forEach { stop ->
@@ -453,7 +450,7 @@ private class MapHolder(private val context: Context, private val error: (String
                 style.addSource(GeoJsonSource(sourceId, json))
                 style.addLayer(CircleLayer("stops-$key", sourceId).withProperties(
                     circleRadius(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(12, 3.5f), Expression.stop(16, 8f))),
-                    circleColor("#FFFFFF"), circleStrokeColor(color), circleStrokeWidth(3f)).apply { minZoom = 12f })
+                    circleColor(color), circleOpacity(0.55f), circleStrokeColor(color), circleStrokeWidth(1f)).apply { minZoom = 12f })
             } else updateSource(source, sourceId, json)
             style.getLayerAs<CircleLayer>("stops-$key")?.setProperties(circleStrokeColor(color))
             val vehicles = if (!showVehicles) emptyList() else runCatching {

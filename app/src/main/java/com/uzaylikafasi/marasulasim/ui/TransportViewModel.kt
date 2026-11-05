@@ -18,6 +18,7 @@ data class LoadState(val loading: Boolean = false, val result: ApiResult? = null
 class TransportViewModel(application: Application) : AndroidViewModel(application) {
     private val app = application as TransportApplication
     private val repository get() = app.repository
+    private val stopLoader by lazy { StopDetails(repository) }
     val settings = app.store.settings.stateIn(viewModelScope, SharingStarted.Eagerly, Settings())
     private val _snapshots = MutableStateFlow<Map<String, LineSnapshot>>(emptyMap())
     val snapshots = _snapshots.asStateFlow()
@@ -103,8 +104,13 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     }
     fun stopDetails(stop: Stop) {
         detailJob?.cancel(); _detail.value = LoadState(true)
-        detailJob = viewModelScope.launch { _detail.value = load("/v1/stops/${stop.id}", live = true) }
+        detailJob = viewModelScope.launch { _detail.value = loadStop(stop) }
     }
+    private suspend fun loadStop(stop: Stop): LoadState = try {
+        LoadState(result = withContext(Dispatchers.IO) { stopLoader.fetch(stop, settings.value) { _detail.value = LoadState(result = it) } })
+    } catch (cancel: CancellationException) { throw cancel }
+    catch (e: Exception) { LoadState(error = e.message ?: "Durak bilgisi alınamadı.") }
+    fun clearJourney() { journeyJob?.cancel(); _journey.value = LoadState() }
     fun clearDetail() { detailJob?.cancel(); _detail.value = LoadState() }
     /** Haritada olmayan bir hattın durakları (aramadan açılan hat sayfası için). Önce kayıtlı kopya gösterilir. */
     fun lineStops(line: Line) {
@@ -122,7 +128,11 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     }
     fun plan(path: String) {
         journeyJob?.cancel(); _journey.value = LoadState(true)
-        journeyJob = viewModelScope.launch { _journey.value = load(path) }
+        journeyJob = viewModelScope.launch {
+            val loaded = load(path, live = true)
+            _journey.value = try { loaded.result?.objectData?.let(::parseJourneys); loaded }
+            catch (e: Exception) { LoadState(error = e.message ?: "Rota okunamadı.") }
+        }
     }
     fun nearby(latitude: Double, longitude: Double) = extra("/v1/stops/nearby?latitude=$latitude&longitude=$longitude")
     fun prepareNearby() { extraJob?.cancel(); _extra.value = LoadState(true) }
@@ -130,7 +140,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun watchStop(stop: Stop) {
         delay(15_000)
         while (currentCoroutineContext().isActive) {
-            _detail.value = load("/v1/stops/${stop.id}", live = true)
+            _detail.value = loadStop(stop)
             delay(15_000)
         }
     }
