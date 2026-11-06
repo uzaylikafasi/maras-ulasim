@@ -101,6 +101,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     fun trackOnTap(value: Boolean) = action { app.store.setTrackOnTap(value) }
     fun showSourceTime(value: Boolean) = action { app.store.setShowSourceTime(value) }
     fun stopRangeMeters(value: Int) = action { app.store.setStopRangeMeters(value) }
+    fun showAllStops(value: Boolean) = action { app.store.setShowAllStops(value) }
     private val _tracked = MutableStateFlow<TrackedBus?>(null)
     val tracked = _tracked.asStateFlow()
     /** Yaklaşan otobüse dokununca: hat kodu ve gidilen durakla o plaka izlenir. */

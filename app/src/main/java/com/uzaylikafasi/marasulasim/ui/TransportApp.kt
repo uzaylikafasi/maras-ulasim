@@ -360,7 +360,7 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
     Box(Modifier.fillMaxSize()) {
         key(mapAttempt) {
             TransportMap(snapshots, focus, settings.plates, tracked != null || settings.showVehicles, locate, Modifier.fillMaxSize(),
-                stopRangeMeters = settings.stopRangeMeters,
+                stopRangeMeters = settings.stopRangeMeters, showAllStops = settings.showAllStops,
                 follow = tracked?.let { t -> trackedBus?.let { it.coordinate to t.stop } }, onStopClick = onStop, onVehicleClick = onVehicle,
                 onPlaceClick = onPlace, onError = { mapError = it })
         }
@@ -913,7 +913,7 @@ private fun SettingsSheet(settings: Settings, vm: TransportViewModel, onDismiss:
             Text("Harita", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
             SettingSwitch(Icons.Outlined.DirectionsBus, "Otobüsleri göster", "Seçili hatların canlı otobüsleri", settings.showVehicles, vm::showVehicles)
             SettingSwitch(Icons.Outlined.MyLocation, "Dokununca otobüsü izle", "Duraktaki otobüse dokununca haritada yalnız o görünür", settings.trackOnTap, vm::trackOnTap)
-            StopRangeSetting(settings.stopRangeMeters, vm::stopRangeMeters)
+            StopRangeSetting(settings.stopRangeMeters, settings.showAllStops, vm::stopRangeMeters, vm::showAllStops)
             Text("Durak", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
             SettingSwitch(Icons.Outlined.StarOutline, "Sadece favorilerim", "Durakta yalnız favori hatların otobüsleri", settings.favoritesOnly, vm::favoritesOnly)
         }
@@ -928,14 +928,15 @@ private fun SettingSwitch(icon: ImageVector, title: String, subtitle: String, ch
 private val STOP_RANGE_PRESETS = listOf(300, 750, 1500, 3000)
 /** Haritada en az kaç metre çaptaki duraklar yüklensin; seçenekler az veri/pil ile daha geniş görünüm arasında. */
 @Composable
-private fun StopRangeSetting(current: Int, onChange: (Int) -> Unit) {
+private fun StopRangeSetting(current: Int, showAll: Boolean, onChange: (Int) -> Unit, onShowAll: (Boolean) -> Unit) {
     ListItem(headlineContent = { Text("Harita durak menzili") },
-        supportingContent = { Text("Haritada en az bu çapta duraklar yüklenir (boş bölgede otomatik büyür). Daha küçük menzil daha az veri kullanır.") },
+        supportingContent = { Text("Maraş'ın tüm durakları tek, küçük bir yerel dosyada; \"Tümü\" ekstra veri harcamaz. Daha küçük menzil yalnız eski/zayıf telefonlarda haritayı hafifletir.") },
         leadingContent = { Icon(Icons.Outlined.Map, null) })
     Row(Modifier.padding(start = 56.dp, end = 16.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        FilterChip(selected = showAll, onClick = { onShowAll(true) }, label = { Text("Tümü") })
         STOP_RANGE_PRESETS.forEach { meters ->
-            val selected = meters == current
-            FilterChip(selected = selected, onClick = { onChange(meters) },
+            val selected = !showAll && meters == current
+            FilterChip(selected = selected, onClick = { onShowAll(false); onChange(meters) },
                 label = { Text(if (meters >= 1000) "${meters / 1000} km" else "$meters m") })
         }
     }

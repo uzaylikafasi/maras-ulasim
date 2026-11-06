@@ -115,7 +115,7 @@ private fun arrowBitmap(): android.graphics.Bitmap {
 
 @Composable
 fun TransportMap(snapshots: List<LineSnapshot>, focus: Stop?, favoritePlates: Set<String>, showVehicles: Boolean, locate: Pair<Long, Coordinate>?, modifier: Modifier = Modifier,
-                 stopRangeMeters: Int = DEFAULT_STOP_RANGE_METERS,
+                 stopRangeMeters: Int = DEFAULT_STOP_RANGE_METERS, showAllStops: Boolean = true,
                  follow: Pair<Coordinate, Stop>? = null, onStopClick: (Stop) -> Unit, onVehicleClick: (Line, Vehicle) -> Unit, onPlaceClick: (String, Coordinate) -> Unit, onError: (String?) -> Unit) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -163,6 +163,7 @@ fun TransportMap(snapshots: List<LineSnapshot>, focus: Stop?, favoritePlates: Se
         if (focus?.latitude != null && focus.longitude != null) holder.focus(focus)
     }
     val now = tick
+    holder.showAllStops = showAllStops
     holder.stopRangeMeters = stopRangeMeters.toDouble()
     AndroidView(factory = { holder.view }, modifier = modifier, update = { holder.render(snapshots, favoritePlates, now, showVehicles) })
 }
@@ -178,6 +179,9 @@ private class MapHolder(private val context: Context, private val error: (String
     var placeClicked: ((String, Coordinate) -> Unit)? = null
     // Ayarlardan gelir: harita menzilinde en az bu kadar alan taranır (boş bölgede otomatik büyür).
     var stopRangeMeters: Double = DEFAULT_STOP_RANGE_METERS.toDouble()
+        set(value) { field = value; map?.style?.let(::updateNearbyStops) }
+    // "Tümü" seçiliyken menzil hesaba katılmaz: tek şehrin tüm durakları (küçük yerel katalog) birden gösterilir.
+    var showAllStops: Boolean = true
         set(value) { field = value; map?.style?.let(::updateNearbyStops) }
     private var knownStops = emptyMap<Long, Stop>()
     private var locationOn = false
@@ -356,14 +360,18 @@ private class MapHolder(private val context: Context, private val error: (String
             style.getSourceAs<GeoJsonSource>(ALL_STOPS)?.let { updateSource(it, ALL_STOPS, "{\"type\":\"FeatureCollection\",\"features\":[]}") }
             return
         }
-        val center = m.cameraPosition.target ?: return
-        val at = Coordinate(center.latitude, center.longitude)
-        val bounds = m.projection.visibleRegion.latLngBounds
-        val corner = Coordinate(bounds.latitudeNorth, bounds.longitudeEast)
-        // Görüş köşesi + kenar payı; boş bölgede menzil en yakın durak bulunana kadar büyür.
-        val radius = maxOf(stopRangeMeters, distanceMeters(at, corner) * 1.2)
+        // "Tümü": tek şehrin (Maraş) küçük yerel kataloğu zaten tek parça, menzil hesabı gereksiz.
+        val shown = if (showAllStops) stopCatalog else {
+            val center = m.cameraPosition.target ?: return
+            val at = Coordinate(center.latitude, center.longitude)
+            val bounds = m.projection.visibleRegion.latLngBounds
+            val corner = Coordinate(bounds.latitudeNorth, bounds.longitudeEast)
+            // Görüş köşesi + kenar payı; boş bölgede menzil en yakın durak bulunana kadar büyür.
+            val radius = maxOf(stopRangeMeters, distanceMeters(at, corner) * 1.2)
+            stopsInRange(stopCatalog, at, radius)
+        }
         val features = JSONArray()
-        stopsInRange(stopCatalog, at, radius).forEach { stop ->
+        shown.forEach { stop ->
             features.put(JSONObject().put("type", "Feature").put("properties", JSONObject().put("id", stop.id)
                 .put("code", stop.code).put("name", stop.name).put("lat", stop.latitude).put("lng", stop.longitude))
                 .put("geometry", JSONObject().put("type", "Point").put("coordinates", JSONArray(listOf(stop.longitude, stop.latitude)))))
