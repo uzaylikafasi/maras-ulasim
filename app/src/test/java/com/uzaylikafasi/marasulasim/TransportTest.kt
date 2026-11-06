@@ -17,11 +17,15 @@ class TransportTest {
         assertEquals(DEFAULT_SERVER, Settings().server)
         assertEquals(DEFAULT_SERVER, validatedServer(DEFAULT_SERVER, false))
     }
-    @Test fun `source duration shows by default and map range defaults to the standard preset`() {
-        // Kaynak süresi payların açık olmasından bağımsız varsayılan olarak görünür; harita menzili varsayılanı sabit.
+    @Test fun `source duration shows by default and the whole small local stop catalog loads by default`() {
+        // Kaynak süresi payların açık olmasından bağımsız varsayılan olarak görünür; tek şehrin kataloğu küçük oldugundan
+        // varsayılan "Tümü"dür (menzil sınırlaması yalnız kullanıcı özellikle seçince devreye girer).
         assertTrue(Settings().showSourceTime)
+        assertTrue(Settings().showAllStops)
         assertEquals(DEFAULT_STOP_RANGE_METERS, Settings().stopRangeMeters)
         assertEquals(750, DEFAULT_STOP_RANGE_METERS)
+        // Deneysel süre payları varsayılan kapalı kalır (kullanıcı özellikle açar).
+        assertFalse(Settings().stopPad); assertFalse(Settings().lightPad)
     }
     @Test fun `old keyless pilot migrates once and preserves favorites`() = runTest {
         val server = androidx.datastore.preferences.core.stringPreferencesKey("server")
