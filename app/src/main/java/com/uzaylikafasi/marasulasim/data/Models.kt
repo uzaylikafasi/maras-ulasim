@@ -27,6 +27,18 @@ const val SECONDS_PER_STOP = 15
 /** Kaynak süreye eklenecek pay (sn): ara durak başına [SECONDS_PER_STOP], yoldaki ışık başına [LIGHT_WAIT_SECONDS]. */
 fun padSeconds(stopsBetween: Int?, stopPad: Boolean, lights: Int, lightPad: Boolean): Int =
     (if (stopPad) (stopsBetween ?: 0) * SECONDS_PER_STOP else 0) + (if (lightPad) lights * LIGHT_WAIT_SECONDS else 0)
+
+/**
+ * Varış kartının küçük alt satırı: üç bağımsız ayar (kaynak süresi, durak payı, ışık payı) kendi parçasını
+ * ekler ya da eklemez. Hiçbiri açık değilse (ya da kaynak süresi henüz okunamadıysa) boş liste döner.
+ */
+fun arrivalSourceParts(remaining: String, hasBase: Boolean, showSourceTime: Boolean, stopsBetween: Int?, stopPad: Boolean, lightsAhead: Int, lightPad: Boolean): List<String> {
+    if (!hasBase) return emptyList() // Sayisal sure yoksa ("Kalkis bekleniyor" gibi) pay bilgisi anlamsiz.
+    return listOfNotNull(
+        "Kaynak $remaining".takeIf { showSourceTime },
+        stopsBetween?.takeIf { stopPad && it > 0 }?.let { "$it durak × $SECONDS_PER_STOP sn" },
+        lightsAhead.takeIf { lightPad && it > 0 }?.let { "$it ışık × $LIGHT_WAIT_SECONDS sn" })
+}
 fun secondsOf(a: Arrival): Int? = a.seconds?.takeIf { it >= 0 } ?: Regex("""(?:(\d+)\s*(?:dk|dakika))?\s*(?:(\d+)\s*(?:sn|saniye))?""").matchEntire(a.remaining.trim())?.let { m ->
     val dk = m.groupValues[1].ifBlank { "0" }.toLongOrNull() ?: return@let null
     val sn = m.groupValues[2].ifBlank { "0" }.toLongOrNull() ?: return@let null

@@ -99,6 +99,8 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
         app.lights.observe(vehicles)
     }
     fun trackOnTap(value: Boolean) = action { app.store.setTrackOnTap(value) }
+    fun showSourceTime(value: Boolean) = action { app.store.setShowSourceTime(value) }
+    fun stopRangeMeters(value: Int) = action { app.store.setStopRangeMeters(value) }
     private val _tracked = MutableStateFlow<TrackedBus?>(null)
     val tracked = _tracked.asStateFlow()
     /** Yaklaşan otobüse dokununca: hat kodu ve gidilen durakla o plaka izlenir. */
@@ -251,9 +253,17 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     suspend fun monitor() {
         settings.map { Triple(it.server, it.apiKey, it.mapLines.filter { line -> line.key in it.selected } to it.showVehicles) }
             .distinctUntilChanged().collectLatest {
+                var consecutiveFailures = 0
                 while (currentCoroutineContext().isActive) {
-                    if(_tracked.value==null) refreshLines()
-                    delay(15_000)
+                    if (_tracked.value == null) {
+                        refreshLines()
+                        val selected = settings.value.let { s -> s.mapLines.filter { line -> line.key in s.selected } }
+                        val allFailed = selected.isNotEmpty() && selected.all { _snapshots.value[it.key]?.error != null }
+                        consecutiveFailures = if (allFailed) (consecutiveFailures + 1).coerceAtMost(3) else 0
+                    }
+                    // Baglanti kesikken her 15 sn tekrar denemek pil/veri bosa gider: art arda hata biriktikce bekleme suresi
+                    // 15 sn -> 30 -> 60 -> 120 sn'ye kadar uzar; basarili istekte hemen 15 sn'ye doner.
+                    delay(15_000L shl consecutiveFailures)
                 }
             }
     }

@@ -360,6 +360,7 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
     Box(Modifier.fillMaxSize()) {
         key(mapAttempt) {
             TransportMap(snapshots, focus, settings.plates, tracked != null || settings.showVehicles, locate, Modifier.fillMaxSize(),
+                stopRangeMeters = settings.stopRangeMeters,
                 follow = tracked?.let { t -> trackedBus?.let { it.coordinate to t.stop } }, onStopClick = onStop, onVehicleClick = onVehicle,
                 onPlaceClick = onPlace, onError = { mapError = it })
         }
@@ -542,9 +543,9 @@ private fun ArrivalCard(arrival: Arrival, stopsBetween: Int? = null, lightsAhead
                 val base = secondsOf(arrival)
                 val extra = if (base == null) 0 else padSeconds(stopsBetween, settings.stopPad, lightsAhead, settings.lightPad)
                 Text(if (base != null && extra > 0) formatDuration(base + extra) else arrival.remaining, style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold)
-                if (base != null && extra > 0) Text(listOfNotNull("Kaynak ${arrival.remaining}",
-                    stopsBetween?.takeIf { settings.stopPad && it > 0 }?.let { "$it durak × $SECONDS_PER_STOP sn" },
-                    lightsAhead.takeIf { settings.lightPad && it > 0 }?.let { "$it ışık × $LIGHT_WAIT_SECONDS sn" }).joinToString(" · "),
+                // Kaynak süresi kendi ayarıyla gösterilir (payların açık olup olmamasından bağımsız).
+                val sourceParts = arrivalSourceParts(arrival.remaining, base != null, settings.showSourceTime, stopsBetween, settings.stopPad, lightsAhead, settings.lightPad)
+                if (sourceParts.isNotEmpty()) Text(sourceParts.joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (waitingAtLight && settings.lightPad) Text("Işık yakınında bekliyor", style = MaterialTheme.typography.labelMedium,
                     fontWeight = FontWeight.SemiBold, color = Color(0xFFDC2626))
@@ -903,14 +904,16 @@ private fun SettingsSheet(settings: Settings, vm: TransportViewModel, onDismiss:
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Ayarlar", style = MaterialTheme.typography.titleLarge)
             Text("Varış süresi", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
-            SettingSwitch(Icons.Outlined.Timer, "Durak payı", "Deneysel: her ara durak için $SECONDS_PER_STOP sn eklenir", settings.stopPad, vm::stopPad)
+            SettingSwitch(Icons.Outlined.Info, "Kaynak süresi", "Kaynağın verdiği çiğ süreyi göster (durak/ışık payı eklenmeden)", settings.showSourceTime, vm::showSourceTime)
+            SettingSwitch(Icons.Outlined.Timer, "Durak payı", "Deneysel: arada kalan her durak için $SECONDS_PER_STOP sn eklenir ve kaç durak olduğunu gösterir", settings.stopPad, vm::stopPad)
             val known = remember { vm.lightLearner.lights().size }
             SettingSwitch(Icons.Outlined.Traffic, "Kırmızı ışık payı",
-                "Deneysel: yoldaki her ışık için $LIGHT_WAIT_SECONDS sn eklenir. Işıklar, durak dışında duran otobüslerden öğrenilir ($known ışık biliniyor)",
+                "Deneysel: yoldaki her ışık için $LIGHT_WAIT_SECONDS sn eklenir ve kaç ışık olduğunu gösterir. Işıklar, durak dışında duran otobüslerden öğrenilir ($known ışık biliniyor)",
                 settings.lightPad, vm::lightPad)
             Text("Harita", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
             SettingSwitch(Icons.Outlined.DirectionsBus, "Otobüsleri göster", "Seçili hatların canlı otobüsleri", settings.showVehicles, vm::showVehicles)
             SettingSwitch(Icons.Outlined.MyLocation, "Dokununca otobüsü izle", "Duraktaki otobüse dokununca haritada yalnız o görünür", settings.trackOnTap, vm::trackOnTap)
+            StopRangeSetting(settings.stopRangeMeters, vm::stopRangeMeters)
             Text("Durak", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
             SettingSwitch(Icons.Outlined.StarOutline, "Sadece favorilerim", "Durakta yalnız favori hatların otobüsleri", settings.favoritesOnly, vm::favoritesOnly)
         }
@@ -921,6 +924,21 @@ private fun SettingSwitch(icon: ImageVector, title: String, subtitle: String, ch
     ListItem(headlineContent = { Text(title) }, supportingContent = { Text(subtitle) }, leadingContent = { Icon(icon, null) },
         trailingContent = { Switch(checked = checked, onCheckedChange = null) },
         modifier = Modifier.clickable(role = androidx.compose.ui.semantics.Role.Switch) { onChange(!checked) })
+}
+private val STOP_RANGE_PRESETS = listOf(300, 750, 1500, 3000)
+/** Haritada en az kaç metre çaptaki duraklar yüklensin; seçenekler az veri/pil ile daha geniş görünüm arasında. */
+@Composable
+private fun StopRangeSetting(current: Int, onChange: (Int) -> Unit) {
+    ListItem(headlineContent = { Text("Harita durak menzili") },
+        supportingContent = { Text("Haritada en az bu çapta duraklar yüklenir (boş bölgede otomatik büyür). Daha küçük menzil daha az veri kullanır.") },
+        leadingContent = { Icon(Icons.Outlined.Map, null) })
+    Row(Modifier.padding(start = 56.dp, end = 16.dp, bottom = 8.dp), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+        STOP_RANGE_PRESETS.forEach { meters ->
+            val selected = meters == current
+            FilterChip(selected = selected, onClick = { onChange(meters) },
+                label = { Text(if (meters >= 1000) "${meters / 1000} km" else "$meters m") })
+        }
+    }
 }
 @Composable
 private fun MenuRow(icon: ImageVector, title: String, subtitle: String, click: () -> Unit) {

@@ -15,3 +15,9 @@ fun stopsInRange(stops: List<Stop>, center: Coordinate, radiusMeters: Double): L
     }
 }
 const val LOCATION_INTERVAL_MS = 30_000L
+
+// Haritada durak yüklenecek alan (kullanıcı Ayarlar'dan seçer): boş bölgede en yakın durak bulunana kadar otomatik büyür.
+const val MIN_STOP_RANGE_METERS = 300
+const val DEFAULT_STOP_RANGE_METERS = 750
+const val MAX_STOP_RANGE_METERS = 3000
+fun clampStopRange(value: Int): Int = value.coerceIn(MIN_STOP_RANGE_METERS, MAX_STOP_RANGE_METERS)
