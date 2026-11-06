@@ -20,7 +20,7 @@ data class Settings(val server: String = DEFAULT_SERVER, val apiKey: String = ""
                     val selected: Set<String> = emptySet(), val plates: Set<String> = emptySet(),
                     val mapLines: List<Line> = emptyList(), val showVehicles: Boolean = true,
                     val favoritesOnly: Boolean = false, val stopPad: Boolean = false, val lightPad: Boolean = false,
-                    val trackOnTap: Boolean = false) {
+                    val trackOnTap: Boolean = false, val showSourceTime: Boolean = true, val stopRangeMeters: Int = DEFAULT_STOP_RANGE_METERS) {
     val favoriteCodes: Set<String> get() = lines.map { it.code }.toSet()
 }
 
@@ -35,6 +35,8 @@ class LocalStore(private val context: Context) {
     private val stopPad = androidx.datastore.preferences.core.booleanPreferencesKey("stop_pad")
     private val lightPad = androidx.datastore.preferences.core.booleanPreferencesKey("light_pad")
     private val trackOnTap = androidx.datastore.preferences.core.booleanPreferencesKey("track_on_tap")
+    private val showSourceTime = androidx.datastore.preferences.core.booleanPreferencesKey("show_source_time")
+    private val stopRangeMeters = androidx.datastore.preferences.core.intPreferencesKey("stop_range_meters")
     val settings = context.preferences.data.catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }.map { p ->
         // 1.0: sunucu sabit (Ömer: "adres sabit kalsın"); eski özel adres ve anahtar artık kullanılmaz
         Settings(DEFAULT_SERVER, "",
@@ -44,7 +46,8 @@ class LocalStore(private val context: Context) {
             // 0.1.2 ve öncesinde harita hatları favorilerde tutuluyordu: ilk açılışta oradan alınır
             p[mapLines]?.let(::decodeLines) ?: decodeLines(p[lines]),
             p[showVehicles] ?: true, p[favoritesOnly] ?: false,
-            p[stopPad] ?: false, p[lightPad] ?: false, p[trackOnTap] ?: false)
+            p[stopPad] ?: false, p[lightPad] ?: false, p[trackOnTap] ?: false,
+            p[showSourceTime] ?: true, p[stopRangeMeters] ?: DEFAULT_STOP_RANGE_METERS)
     }
     suspend fun toggleLine(line: Line) { context.preferences.edit { p ->
         val values = decodeLines(p[lines]).toMutableList()
@@ -93,6 +96,8 @@ class LocalStore(private val context: Context) {
     suspend fun setStopPad(value: Boolean) { context.preferences.edit { it[stopPad] = value } }
     suspend fun setLightPad(value: Boolean) { context.preferences.edit { it[lightPad] = value } }
     suspend fun setTrackOnTap(value: Boolean) { context.preferences.edit { it[trackOnTap] = value } }
+    suspend fun setShowSourceTime(value: Boolean) { context.preferences.edit { it[showSourceTime] = value } }
+    suspend fun setStopRangeMeters(value: Int) { context.preferences.edit { it[stopRangeMeters] = clampStopRange(value) } }
     /** Hat numarasını (bütün yönleriyle) favorilerden çıkarır. */
     suspend fun removeLineCode(code: String) { context.preferences.edit { p ->
         val values = decodeLines(p[lines])

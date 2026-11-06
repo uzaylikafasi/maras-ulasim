@@ -29,7 +29,8 @@ private const val FOCUS_SOURCE = "focus-source"
 private const val FOCUS_LAYER = "focus"
 private const val ALL_STOPS = "all-stops"
 private const val ALL_STOPS_ICON = "all-stops-simge"
-private const val STOP_COLOR = "#2563EB"
+// Duraklar kırmızı ve iri (Samet/Ömer: donuk mavi küçük nokta fark edilmiyordu); yakında içinde otobüs simgesi.
+private const val STOP_COLOR = "#E11D2E"
 internal const val STOP_MIN_ZOOM = 15f
 private const val PLACES = "yerler"
 private const val CHEVRON = "yol-oku"
@@ -114,6 +115,7 @@ private fun arrowBitmap(): android.graphics.Bitmap {
 
 @Composable
 fun TransportMap(snapshots: List<LineSnapshot>, focus: Stop?, favoritePlates: Set<String>, showVehicles: Boolean, locate: Pair<Long, Coordinate>?, modifier: Modifier = Modifier,
+                 stopRangeMeters: Int = DEFAULT_STOP_RANGE_METERS,
                  follow: Pair<Coordinate, Stop>? = null, onStopClick: (Stop) -> Unit, onVehicleClick: (Line, Vehicle) -> Unit, onPlaceClick: (String, Coordinate) -> Unit, onError: (String?) -> Unit) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -161,6 +163,7 @@ fun TransportMap(snapshots: List<LineSnapshot>, focus: Stop?, favoritePlates: Se
         if (focus?.latitude != null && focus.longitude != null) holder.focus(focus)
     }
     val now = tick
+    holder.stopRangeMeters = stopRangeMeters.toDouble()
     AndroidView(factory = { holder.view }, modifier = modifier, update = { holder.render(snapshots, favoritePlates, now, showVehicles) })
 }
 
@@ -173,6 +176,9 @@ private class MapHolder(private val context: Context, private val error: (String
     var clicked: ((Stop) -> Unit)? = null
     var vehicleClicked: ((Line, Vehicle) -> Unit)? = null
     var placeClicked: ((String, Coordinate) -> Unit)? = null
+    // Ayarlardan gelir: harita menzilinde en az bu kadar alan taranır (boş bölgede otomatik büyür).
+    var stopRangeMeters: Double = DEFAULT_STOP_RANGE_METERS.toDouble()
+        set(value) { field = value; map?.style?.let(::updateNearbyStops) }
     private var knownStops = emptyMap<Long, Stop>()
     private var locationOn = false
     private var rendered = emptySet<String>()
@@ -209,10 +215,10 @@ private class MapHolder(private val context: Context, private val error: (String
                 val pixel = m.projection.toScreenLocation(point)
                 val vehicle = nearest(m, pixel, rendered.map { "vehicles-$it" })?.getStringProperty("vehicle")?.let { knownVehicles[it] }
                 if (vehicle != null) { vehicleClicked?.invoke(vehicle.first, vehicle.second); return@addOnMapClickListener true }
-                val id = nearest(m, pixel, rendered.map { "stops-$it" } + FOCUS_LAYER)?.getNumberProperty("id")?.toLong()
+                val id = nearest(m, pixel, rendered.flatMap { listOf("stops-$it", "stops-$it-icon") } + FOCUS_LAYER)?.getNumberProperty("id")?.toLong()
                 id?.let { knownStops[it] }?.let { clicked?.invoke(it); return@addOnMapClickListener true }
                 // Seçili hatlarda olmayan durak: şehirdeki bütün duraklar katmanından
-                val stop = nearest(m, pixel, listOf(ALL_STOPS))?.let { f -> runCatching { Stop(f.getNumberProperty("id").toLong(), f.getStringProperty("code"),
+                val stop = nearest(m, pixel, listOf(ALL_STOPS, "$ALL_STOPS-icon"))?.let { f -> runCatching { Stop(f.getNumberProperty("id").toLong(), f.getStringProperty("code"),
                     f.getStringProperty("name"), f.getNumberProperty("lat").toDouble(), f.getNumberProperty("lng").toDouble()) }.getOrNull() }
                 if (stop != null) { clicked?.invoke(stop); return@addOnMapClickListener true }
                 val place = nearest(m, pixel, listOf(PLACES))
@@ -317,22 +323,27 @@ private class MapHolder(private val context: Context, private val error: (String
         bounds.forEach { (sw, ne) -> b.include(LatLng(sw.latitude, sw.longitude)); b.include(LatLng(ne.latitude, ne.longitude)) }
         runCatching { m.animateCamera(CameraUpdateFactory.newLatLngBounds(b.build(), 120)) }
     }
-    /** Durak simgeleri yalnız mahalle/sokak ölçeğinde; şehir görünümünde kapalı. */
+    /** Durak simgeleri yalnız mahalle/sokak ölçeğinde (STOP_MIN_ZOOM); şehir görünümünde kapalı. */
     private fun addAllStops(style: Style) {
         if (style.getSource(ALL_STOPS) != null) return
         style.addImage(ALL_STOPS_ICON, placeBitmap(STOP_COLOR, androidx.compose.material.icons.Icons.Filled.DirectionsBus))
         style.addSource(GeoJsonSource(ALL_STOPS, "{\"type\":\"FeatureCollection\",\"features\":[]}"))
         updateNearbyStops(style)
-        style.addLayer(stopSymbols(ALL_STOPS, ALL_STOPS))
+        addStopLayers(style, ALL_STOPS, ALL_STOPS)
         style.addLayer(SymbolLayer("$ALL_STOPS-ad", ALL_STOPS).withProperties(textField(Expression.get("name")), textSize(10f),
             textColor("#3B4C50"), textHaloColor("#FFFFFF"), textHaloWidth(1.2f), textOffset(arrayOf(0f, 1.6f)), textAnchor(Property.TEXT_ANCHOR_TOP),
-            textFont(arrayOf("Noto Sans Regular")), textOptional(true)).apply { minZoom = 16f })
+            textFont(arrayOf("Noto Sans Regular")), textOptional(true)).apply { minZoom = STOP_MIN_ZOOM })
     }
 
-    private fun stopSymbols(id: String, source: String) = SymbolLayer(id, source).withProperties(
-        iconImage(ALL_STOPS_ICON),
-        iconSize(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(15, 0.55f), Expression.stop(18, 0.85f))),
-        iconAllowOverlap(false), iconIgnorePlacement(false), iconPadding(3f)).apply { minZoom = STOP_MIN_ZOOM }
+    // Kırmızı iri daire + üstünde otobüs simgesi (eski küçük mavi nokta/ince simge fark edilmiyordu).
+    private fun addStopLayers(style: Style, circleId: String, source: String) {
+        style.addLayer(CircleLayer(circleId, source).withProperties(
+            circleRadius(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(STOP_MIN_ZOOM, 7f), Expression.stop(18f, 13f))),
+            circleColor(STOP_COLOR), circleStrokeColor("#FFFFFF"), circleStrokeWidth(2.5f)).apply { minZoom = STOP_MIN_ZOOM })
+        style.addLayer(SymbolLayer("$circleId-icon", source).withProperties(iconImage(ALL_STOPS_ICON),
+            iconSize(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(STOP_MIN_ZOOM, 0.55f), Expression.stop(18f, 0.85f))),
+            iconAllowOverlap(true), iconIgnorePlacement(true)).apply { minZoom = STOP_MIN_ZOOM })
+    }
 
     private val stopCatalog: List<Stop> by lazy {
         runCatching { JSONObject(context.assets.open("all-stops.json").bufferedReader().use { it.readText() })
@@ -350,7 +361,7 @@ private class MapHolder(private val context: Context, private val error: (String
         val bounds = m.projection.visibleRegion.latLngBounds
         val corner = Coordinate(bounds.latitudeNorth, bounds.longitudeEast)
         // Görüş köşesi + kenar payı; boş bölgede menzil en yakın durak bulunana kadar büyür.
-        val radius = maxOf(750.0, distanceMeters(at, corner) * 1.2)
+        val radius = maxOf(stopRangeMeters, distanceMeters(at, corner) * 1.2)
         val features = JSONArray()
         stopsInRange(stopCatalog, at, radius).forEach { stop ->
             features.put(JSONObject().put("type", "Feature").put("properties", JSONObject().put("id", stop.id)
@@ -443,7 +454,7 @@ private class MapHolder(private val context: Context, private val error: (String
         if (!locationOn) locationOn = showLocation(style)
         val keys = snapshots.map { it.line.key.replace(':', '-') }.toSet()
         (rendered - keys).forEach { key ->
-            style.removeLayer("route-$key"); style.removeLayer("route-casing-$key"); style.removeLayer("route-arrows-$key"); style.removeLayer("stops-$key")
+            style.removeLayer("route-$key"); style.removeLayer("route-casing-$key"); style.removeLayer("route-arrows-$key"); style.removeLayer("stops-$key"); style.removeLayer("stops-$key-icon")
             style.removeLayer("vehicle-label-$key"); style.removeLayer("vehicles-$key"); style.removeLayer("vehicles-bg-$key"); style.removeLayer("vehicle-dir-$key")
             style.removeSource("route-source-$key"); style.removeSource("stop-source-$key")
             style.removeSource("vehicle-source-$key")
@@ -495,8 +506,9 @@ private class MapHolder(private val context: Context, private val error: (String
             val source = style.getSourceAs<GeoJsonSource>(sourceId)
             if (source == null) {
                 style.addSource(GeoJsonSource(sourceId, json))
-                style.addLayer(stopSymbols("stops-$key", sourceId))
+                addStopLayers(style, "stops-$key", sourceId)
             } else updateSource(source, sourceId, json)
+            style.getLayerAs<CircleLayer>("stops-$key")?.setProperties(circleStrokeColor(color))
             val vehicles = if (!showVehicles) emptyList() else runCatching {
                 snapshot.vehicles?.takeUnless { it.isOld(java.time.Instant.ofEpochMilli(now)) }?.arrayData?.let(::parseVehicles)
             }.getOrNull().orEmpty()

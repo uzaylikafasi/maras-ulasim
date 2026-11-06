@@ -17,6 +17,12 @@ class TransportTest {
         assertEquals(DEFAULT_SERVER, Settings().server)
         assertEquals(DEFAULT_SERVER, validatedServer(DEFAULT_SERVER, false))
     }
+    @Test fun `source duration shows by default and map range defaults to the standard preset`() {
+        // Kaynak süresi payların açık olmasından bağımsız varsayılan olarak görünür; harita menzili varsayılanı sabit.
+        assertTrue(Settings().showSourceTime)
+        assertEquals(DEFAULT_STOP_RANGE_METERS, Settings().stopRangeMeters)
+        assertEquals(750, DEFAULT_STOP_RANGE_METERS)
+    }
     @Test fun `old keyless pilot migrates once and preserves favorites`() = runTest {
         val server = androidx.datastore.preferences.core.stringPreferencesKey("server")
         val favorites = androidx.datastore.preferences.core.stringPreferencesKey("lines")

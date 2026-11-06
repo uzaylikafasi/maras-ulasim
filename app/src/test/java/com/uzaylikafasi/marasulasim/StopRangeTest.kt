@@ -23,6 +23,14 @@ class StopRangeTest {
         assertEquals(emptyList<Stop>(), stopsInRange(listOf(near.copy(latitude=null)),center,750.0))
         assertEquals(30_000L,LOCATION_INTERVAL_MS)
     }
+    @Test fun stopRangeSettingHasASensibleDefaultAndClampsToTheAllowedPresets() {
+        // Ayarlardan gelen menzil kullanıcı kararı: varsayılan eski sabit degerle (750 m) ayni, sinirlar disina tasmaz.
+        assertEquals(DEFAULT_STOP_RANGE_METERS, Settings().stopRangeMeters)
+        assertEquals(750, DEFAULT_STOP_RANGE_METERS)
+        assertEquals(MIN_STOP_RANGE_METERS, clampStopRange(0))
+        assertEquals(MAX_STOP_RANGE_METERS, clampStopRange(1_000_000))
+        assertEquals(1500, clampStopRange(1500))
+    }
     @Test fun invalidStopCoordinatesCannotCauseAnEndlessExpansion() {
         assertTrue(stopsInRange(listOf(near.copy(latitude=Double.NaN)),center,750.0).isEmpty())
         assertTrue(runCatching { stopsInRange(listOf(near),Coordinate(Double.NaN,36.9),750.0) }.isFailure)
