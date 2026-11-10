@@ -30,11 +30,12 @@ fun UpdatePrompt() {
     }
     release?.let { item -> AlertDialog(onDismissRequest={ vm.dismiss() },title={ Text("Yeni sürüm: ${item.version}") },text={
         Column(Modifier.heightIn(max=420.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
+            // Durum ve hata en üstte: uzun sürüm notlarının altında kalıp "hiçbir şey olmuyor" izlenimi vermesin.
+            error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
+            if(downloading) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("İndiriliyor…") }
+            if(file!=null) Text("İndirme ve imza kontrolü tamamlandı. Kur'a dokun.")
             Text(item.notes.ifBlank { "Yeni sürüm yayımlandı." })
             Text("APK bu cihaz için seçilir. İndirdikten sonra Kur'a dokun; Android yükleyicisinde kurulumu onaylayabilirsin. Uygulama seçimi çıkarsa Paket yükleyici'yi seç.")
-            if(downloading) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("İndiriliyor…") }
-            if(file!=null) Text("İndirme ve imza kontrolü tamamlandı.")
-            error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
         }
     },confirmButton={ TextButton(enabled=!downloading,onClick={
         if(file==null) vm.download() else if(context.packageManager.canRequestPackageInstalls()) install()

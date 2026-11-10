@@ -120,8 +120,9 @@ class AppUpdates(private val context: Context) {
         val installed = pm.getPackageInfo(context.packageName,flags)
         fun signatures(info: android.content.pm.PackageInfo): Set<String> =
             (if(Build.VERSION.SDK_INT>=28) info.signingInfo?.apkContentsSigners ?: info.signatures else info.signatures).orEmpty().map { it.toCharsString() }.toSet()
-        check(apk.packageName==context.packageName && apk.versionName==version &&
-            signatures(apk).isNotEmpty() && signatures(apk)==signatures(installed)) { "APK imzası veya sürümü uygulamayla eşleşmiyor." }
+        check(apk.packageName==context.packageName && apk.versionName==version && signatures(apk).isNotEmpty()) { "APK imzası veya sürümü uygulamayla eşleşmiyor." }
+        // Aynı uygulama ve sürüm ama başka anahtarla imzalıysa Android üstüne kurmaz; nedeni kullanıcıya açık söylenir.
+        check(signatures(apk)==signatures(installed)) { "Bu sürüm, kurulu uygulamadan farklı bir anahtarla imzalı; Android üstüne kurmaz. Uygulamayı kaldırıp yeniden kurman gerekir (favoriler silinir)." }
     }
     fun install(file: File) {
         require(file.canonicalFile.parentFile==File(context.cacheDir,"updates").canonicalFile && file.name=="update.apk")
@@ -149,7 +150,8 @@ class UpdateViewModel(application: android.app.Application) : androidx.lifecycle
         viewModelScope.launch {
             try { state.value = state.value.copy(file=updates.download(release)) }
             catch(e: kotlinx.coroutines.CancellationException) { throw e }
-            catch(_: Exception) { state.value = state.value.copy(error="İndirme tamamlanamadı veya APK doğrulanamadı. Bağlantını kontrol edip tekrar dene.") }
+            catch(e: Exception) { state.value = state.value.copy(error=(e as? IllegalStateException)?.message
+                ?: "İndirme tamamlanamadı veya APK doğrulanamadı. Bağlantını kontrol edip tekrar dene.") }
             finally { state.value = state.value.copy(downloading=false) }
         }
     }
