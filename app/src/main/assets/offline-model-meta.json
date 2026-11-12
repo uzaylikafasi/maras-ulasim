@@ -1,0 +1,61 @@
+{
+ "schema": 1,
+ "model_version": "20261112-bfe71be4",
+ "sha256": "49c07233a456034e0a3424cc032364f03564d41ebce4b4cb1a34692098403393",
+ "size_bytes": 400201,
+ "raw_size_bytes": 1740279,
+ "file": "offline-model.json.gz",
+ "built_at": "2026-11-12T22:31:10Z",
+ "generator": "model_uret.py 1.0",
+ "days": 4,
+ "day_list": [
+  "2026-11-10",
+  "2026-11-11",
+  "2026-11-12",
+  "2026-11-13"
+ ],
+ "rounds": 195,
+ "samples": 33866,
+ "pairs": 23116,
+ "first": "2026-11-10T15:30:00.976821+03:00",
+ "last": "2026-11-13T00:27:07+03:00",
+ "coverage": {
+  "WORKDAY": {
+   "days": 4,
+   "hours": [
+    0,
+    9,
+    10,
+    11,
+    12,
+    13,
+    14,
+    15,
+    16,
+    17,
+    18,
+    19,
+    20,
+    21,
+    22,
+    23
+   ]
+  },
+  "SATURDAY": {
+   "days": 0,
+   "hours": []
+  },
+  "SUNDAY": {
+   "days": 0,
+   "hours": []
+  }
+ },
+ "cells": {
+  "observed": 1158,
+  "sufficient": 811
+ },
+ "lines": {
+  "total": 117,
+  "with_estimates": 87
+ }
+}
