@@ -8,6 +8,7 @@ import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
+import org.json.JSONObject
 import java.io.IOException
 import java.io.ByteArrayOutputStream
 import java.util.concurrent.TimeUnit
@@ -35,6 +36,31 @@ class TransportApi(private val client: OkHttpClient = OkHttpClient.Builder()
     // Uygulamanın tüm ön plan/arka plan sorguları aynı kapıdan geçer: en çok 60 başlangıç/dk.
     private val requestGate = kotlinx.coroutines.sync.Mutex()
     private var nextRequest = 0L
+    /** İkili dosya indirir (çevrimdışı model); en çok [maxBytes] bayt. Hata durumunda DataException. */
+    suspend fun download(base: String, key: String, path: String, maxBytes: Int): ByteArray = kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+        val url = (base + path).toHttpUrlOrNull() ?: throw DataException("Sunucu adresi geçersiz.")
+        val accessKey = validatedApiKey(key)
+        val request = Request.Builder().url(url)
+            .header("User-Agent", "MarasUlasimAndroid/1.0 (+https://github.com/uzaylikafasi/maras-ulasim)")
+            .apply { if (accessKey.isNotBlank()) header("X-API-Key", accessKey) }.build()
+        val slow = client.newBuilder().callTimeout(120, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).build()
+        try {
+            slow.newCall(request).execute().use { response ->
+                if (!response.isSuccessful) throw DataException("Dosya alınamadı (${response.code}).")
+                val output = ByteArrayOutputStream()
+                val buffer = ByteArray(16384)
+                response.body?.byteStream()?.use { input ->
+                    while (true) {
+                        val count = input.read(buffer)
+                        if (count < 0) break
+                        if (output.size() + count > maxBytes) throw DataException("Dosya beklenenden büyük.")
+                        output.write(buffer, 0, count)
+                    }
+                }
+                output.toByteArray()
+            }
+        } catch (e: IOException) { throw ApiException("Sunucuya bağlanılamadı.", FailureKind.NETWORK, e) }
+    }
     suspend fun get(base: String, key: String, path: String): String {
         requestGate.lock()
         try {
@@ -52,7 +78,7 @@ class TransportApi(private val client: OkHttpClient = OkHttpClient.Builder()
             continuation.invokeOnCancellation { call.cancel() }
             call.enqueue(object : Callback {
                 override fun onFailure(call: Call, e: IOException) {
-                    if (continuation.isActive) continuation.resumeWithException(DataException("Sunucuya bağlanılamadı. Bağlantıyı kontrol edip yenile.", e))
+                    if (continuation.isActive) continuation.resumeWithException(ApiException("Sunucuya bağlanılamadı. Bağlantıyı kontrol edip yenile.", FailureKind.NETWORK, e))
                 }
                 override fun onResponse(call: Call, response: Response) {
                     try { response.use {
@@ -69,11 +95,11 @@ class TransportApi(private val client: OkHttpClient = OkHttpClient.Builder()
                         }
                         val body = output.toString(Charsets.UTF_8.name())
                         val result = when {
-                            response.code == 401 -> Result.failure(DataException("Sunucu erişim anahtarını kontrol et."))
-                            response.code == 429 -> Result.failure(DataException("Sunucu şu an yoğun. Biraz sonra yenile."))
+                            response.code == 401 -> Result.failure(ApiException("Sunucu erişim anahtarını kontrol et.", FailureKind.AUTH))
+                            response.code == 429 -> Result.failure(ApiException("Sunucu şu an yoğun. Biraz sonra yenile.", FailureKind.RATE_LIMIT))
                             response.code == 503 || response.code == 502 || response.code == 504 ->
-                                Result.failure(DataException("Ulaşım servisine şu anda ulaşılamıyor. Biraz sonra yenile."))
-                            !response.isSuccessful -> Result.failure(DataException("Veri alınamadı. Daha sonra tekrar dene."))
+                                Result.failure(ApiException("Ulaşım servisine şu anda ulaşılamıyor. Biraz sonra yenile.", serviceFailureKind(body)))
+                            !response.isSuccessful -> Result.failure(ApiException("Veri alınamadı. Daha sonra tekrar dene.", FailureKind.OTHER))
                             else -> Result.success(body)
                         }
                         if (continuation.isActive) continuation.resumeWith(result)
@@ -86,12 +112,23 @@ class TransportApi(private val client: OkHttpClient = OkHttpClient.Builder()
     }
 }
 
+/** 502/503/504 gövdesindeki hata kodundan: kaynak kimlik ya da hız sınırı hatası kesinti sayılmaz (çevrimdışıyla gizlenmez). */
+fun serviceFailureKind(body: String): FailureKind {
+    val code = runCatching { JSONObject(body).optJSONObject("error")?.optString("code").orEmpty() }.getOrDefault("")
+    return when {
+        code.contains("AUTH") || code == "INVALID_API_KEY" -> FailureKind.AUTH
+        code.contains("RATE_LIMIT") -> FailureKind.RATE_LIMIT
+        else -> FailureKind.SERVICE_DOWN
+    }
+}
+
 fun searchPath(query: String): String = HttpUrl.Builder().scheme("https").host("local.invalid")
     .addPathSegments("v1/search").addQueryParameter("q", query).build().let { it.encodedPath + "?" + it.encodedQuery }
 
 interface ResponseCache { fun read(key: String): String?; fun write(key: String, raw: String) }
 
-class TransportRepository(private val api: TransportApi, private val cache: ResponseCache) {
+class TransportRepository(private val api: TransportApi, private val cache: ResponseCache,
+                          private val offline: OfflineProvider? = null, private val config: () -> OfflineConfig = { OfflineConfig(OfflineMode.OFF) }) {
     private fun cacheKey(base: String, key: String, path: String): String {
         val scope = if (key.isEmpty()) "" else java.security.MessageDigest.getInstance("SHA-256")
             .digest(key.toByteArray()).joinToString("") { "%02x".format(it) } + "|"
@@ -99,6 +136,8 @@ class TransportRepository(private val api: TransportApi, private val cache: Resp
     }
     suspend fun fetch(base: String, key: String, path: String, live: Boolean = false): ApiResult {
         val cacheKey = cacheKey(base, key, path)
+        // Düğme kipinde kullanıcı çevrimdışıyı açtıysa ağa sorulmaz (cevap hiçbir yere kaydedilmez).
+        if (OfflinePolicy.serveBeforeNetwork(config())) offlineAnswer(path)?.let { return it }
         try {
             val raw = api.get(base, key, path)
             val decoded = decodeEnvelope(raw)
@@ -109,9 +148,14 @@ class TransportRepository(private val api: TransportApi, private val cache: Resp
             if (!live) runCatching { cache.read(cacheKey) }.getOrNull()?.let {
                 runCatching { decodeEnvelope(it, true, e.message) }.getOrNull()?.let { decoded -> return decoded }
             }
+            // Otomatik kip: ağ ve kayıtlı kopya yok; yalnız bağlantı/servis kesintisinde (anahtar/hız sınırı hatası gizlenmez).
+            val kind = (e as? ApiException)?.kind
+            if (kind != null && OfflinePolicy.serveAfterFailure(config(), kind)) offlineAnswer(path)?.let { return it }
             throw e
         }
     }
+    /** Çevrimdışı cevap önbelleğe yazılmaz ve öğrenmeye girmez. */
+    private fun offlineAnswer(path: String): ApiResult? = runCatching { offline?.answer(path)?.let { decodeEnvelope(it) } }.getOrNull()
     fun cached(base: String, path: String, key: String = ""): ApiResult? = runCatching {
         cache.read(cacheKey(base, key, path))?.let { decodeEnvelope(it, true) }
     }.getOrNull()

@@ -73,15 +73,18 @@ fun parseArrivals(a: JSONArray): List<Arrival> = a.objects().map { o ->
 }
 data class SearchResults(val lines: List<Line>, val stops: List<Stop>)
 data class ApiResult(val data: Any, val fetchedAt: String?, val stale: Boolean = false,
-                     val error: String? = null, val bundled: Boolean = false) {
+                     val error: String? = null, val bundled: Boolean = false, val offline: Boolean = false) {
     val objectData get() = data as? JSONObject ?: throw DataException("Verinin biçimi değişmiş.")
     val arrayData get() = data as? JSONArray ?: throw DataException("Verinin biçimi değişmiş.")
     fun isOld(now: Instant = Instant.now(), maxAgeSeconds: Long = 45): Boolean =
-        stale || fetchedAt == null || runCatching {
+        stale || offline || fetchedAt == null || runCatching {
             java.time.Duration.between(fetchedInstant(fetchedAt ?: ""), now).seconds !in -30..maxAgeSeconds
         }.getOrDefault(true)
 }
-class DataException(message: String, cause: Throwable? = null) : Exception(message, cause)
+open class DataException(message: String, cause: Throwable? = null) : Exception(message, cause)
+/** Hatanın türü: çevrimdışı tahmin yalnız bağlantı/servis kesintisinde devreye girer, anahtar ve hız sınırı hatalarında asla. */
+enum class FailureKind(val offlineEligible: Boolean) { NETWORK(true), SERVICE_DOWN(true), AUTH(false), RATE_LIMIT(false), OTHER(false) }
+class ApiException(message: String, val kind: FailureKind, cause: Throwable? = null) : DataException(message, cause)
 
 fun JSONArray.objects(): List<JSONObject> = (0 until length()).map { index ->
     optJSONObject(index) ?: throw DataException("Verinin biçimi değişmiş.")
@@ -137,7 +140,7 @@ fun decodeEnvelope(raw: String, stale: Boolean = false, error: String? = null): 
         if (data !is JSONObject && data !is JSONArray) throw DataException("Verinin biçimi değişmiş.")
         val meta = o.getJSONObject("meta")
         return ApiResult(data, meta.optString("fetched_at").takeIf { it.isNotBlank() && it != "null" },
-            stale, error, meta.optBoolean("bundled"))
+            stale, error, meta.optBoolean("bundled"), meta.optBoolean("offline"))
     } catch (e: DataException) { throw e }
     catch (_: Exception) { throw DataException("Verinin biçimi değişmiş.") }
 }
