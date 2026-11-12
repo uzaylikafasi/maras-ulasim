@@ -17,8 +17,8 @@ android {
         applicationId = "com.uzaylikafasi.marasulasim"
         minSdk = 26
         targetSdk = 35
-        versionCode = 12
-        versionName = "1.1.2"
+        versionCode = 13
+        versionName = "1.2.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         vectorDrawables.useSupportLibrary = true
         ndk { abiFilters += listOf("arm64-v8a", "armeabi-v7a", "x86_64") }
@@ -59,6 +59,7 @@ dependencies {
     implementation("androidx.datastore:datastore-preferences:1.1.7")
     implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.10.2")
     implementation("com.squareup.okhttp3:okhttp:4.12.0")
+    implementation("androidx.work:work-runtime-ktx:2.9.1")
     implementation("org.maplibre.gl:android-sdk-opengl:13.7.1")
     testImplementation("junit:junit:4.13.2")
     testImplementation("org.json:json:20250517")

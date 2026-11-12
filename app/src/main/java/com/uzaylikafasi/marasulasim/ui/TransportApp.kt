@@ -32,6 +32,9 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.semantics.role
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.material.icons.filled.Star
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -73,6 +76,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
         val message by vm.message.collectAsStateWithLifecycle()
         val lineStops by vm.lineStops.collectAsStateWithLifecycle()
         val tracked by vm.tracked.collectAsStateWithLifecycle()
+        val offlineButton by vm.offlineButton.collectAsStateWithLifecycle()
         val lifecycle = LocalLifecycleOwner.current.lifecycle
         var tab by rememberSaveable { mutableIntStateOf(0) }
         var query by rememberSaveable { mutableStateOf("") }
@@ -115,6 +119,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                 if (tab == 0) Text("Hatların, tek haritada", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
             } }, actions = {
                 if (tab == 0) IconButton(onClick = { vm.refresh() }) { Icon(Icons.Outlined.Refresh, "Haritayı yenile") }
+                OfflineModeButton(offlineButton, vm::toggleOffline, Modifier.padding(end = 4.dp))
             })
         }, bottomBar = {
             NavigationBar {
@@ -128,6 +133,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                         onTrackedInfo = { t -> openedArrival=t.stop to Arrival(t.line.code,t.plate,"Süre belirtilmedi",t.vehicle()?.nextStop.orEmpty(),name=t.line.name,direction=t.line.directionName,lineId=t.line.id.toString()) },
                         onSearch = { tab = 1 }, onLine = { openedLine = it }, onSelect = vm::select, onRemove = vm::removeFromMap,
                         onVehicle = { line, vehicle -> openedVehicle = line to vehicle }, onShowVehicles = vm::showVehicles, onRefresh = vm::refresh,
+                        offline = offlineButton, onOffline = vm::toggleOffline,
                         onNearby = { nearbyTitle = null; sheet = "nearby"; vm.prepareNearby(); onNearby() }, onLocate = onLocate,
                         onPlace = { name, at -> nearbyTitle = name; sheet = "nearby"; vm.nearby(at.latitude, at.longitude) })
                     1 -> SearchScreen(query, onQuery = { query = it; vm.search(it) }, search, settings, vm::favorite, vm::favorite,
@@ -196,6 +202,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                         style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     StateNotice(detail)
                     detail.result?.let { result ->
+                        if (result.offline) OfflineNotice(result)
                         val buses = runCatching { result.objectData.requiredArray("buses") }.getOrNull()
                         val all = runCatching { buses?.let(::parseArrivals) }.getOrNull().orEmpty()
                         val arrivals = if (onlyFavorites) all.filter { it.code in settings.favoriteCodes } else all
@@ -348,7 +355,8 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
 private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focus: Stop?, onStop: (Stop) -> Unit, tracked: TrackedBus?, onStopTracking: () -> Unit, onTrackedInfo: (TrackedBus) -> Unit,
                       onSearch: () -> Unit, onLine: (Line) -> Unit, onSelect: (Line) -> Unit, onRemove: (Line) -> Unit,
                       onVehicle: (Line, Vehicle) -> Unit, onShowVehicles: (Boolean) -> Unit, onRefresh: () -> Unit,
-                      onNearby: () -> Unit, onLocate: ((Double, Double) -> Unit) -> Unit, onPlace: (String, Coordinate) -> Unit) {
+                      onNearby: () -> Unit, onLocate: ((Double, Double) -> Unit) -> Unit, onPlace: (String, Coordinate) -> Unit,
+                      offline: OfflineButtonState = OfflineButtonState(false, false, false, false), onOffline: () -> Unit = {}) {
     var locate by remember { mutableStateOf<Pair<Long, Coordinate>?>(null) }
     var mapError by remember { mutableStateOf<String?>(null) }
     var mapAttempt by remember { mutableIntStateOf(0) }
@@ -375,6 +383,7 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
                 if(tracked==null) MapRoundButton(if (settings.showVehicles) Icons.Outlined.DirectionsBus else Icons.Outlined.BusAlert,
                     if (settings.showVehicles) "Otobüsleri gizle" else "Otobüsleri göster", active = settings.showVehicles) { onShowVehicles(!settings.showVehicles) }
                 if(tracked==null) MapRoundButton(Icons.Outlined.Refresh, "Haritayı yenile") { onRefresh() }
+                OfflineModeButton(offline, onOffline)
             }
             tracked?.let { t ->
                 Surface(modifier = Modifier.widthIn(max = 420.dp), shape = mapCardShape, color = Color.White, shadowElevation = 4.dp) {
@@ -468,6 +477,7 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
                             val vehicles = runCatching { live?.arrayData?.length() }.getOrNull()
                             Text(when {
                                 !settings.showVehicles -> "Otobüsler gizli"
+                                live?.offline == true -> "Çevrimdışı tahmin · canlı konum yok"
                                 live == null -> if (snapshot.error != null) "Canlı veriye ulaşılamıyor" else "Canlı veri alınıyor…"
                                 live.isOld() -> "Araç verisi eski; yenilenmesi bekleniyor"
                                 vehicles == 0 -> "Kaynak şu an araç bildirmiyor"
@@ -778,11 +788,52 @@ private fun StateNotice(state: LoadState) {
     if (state.loading) LinearProgressIndicator(Modifier.fillMaxWidth().padding(vertical = 8.dp))
     state.error?.let { Notice(it) }
 }
+/** Çevrimdışı tahminin görünür etiketi: canlı veri sanılmasın. */
+@Composable
+private fun OfflineNotice(result: ApiResult) {
+    val built = result.fetchedAt?.let { runCatching { fetchedInstant(it).atZone(ZoneId.of("Europe/Istanbul")).format(DateTimeFormatter.ofPattern("HH:mm")) }.getOrNull() }
+    Surface(color = MaterialTheme.colorScheme.tertiaryContainer, contentColor = MaterialTheme.colorScheme.onTertiaryContainer, shape = RoundedCornerShape(10.dp)) {
+        Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
+            Icon(Icons.Outlined.CloudOff, null, Modifier.size(20.dp))
+            Column(Modifier.padding(start = 10.dp)) {
+                Text("Çevrimdışı tahmin", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
+                Text("Canlı veri yok${built?.let { " · $it" }.orEmpty()}. Süreler tarife ve geçmiş ölçümlere dayanır; otobüsün gerçek konumu değildir.",
+                    style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
+}
+
+/**
+ * Sağ üstteki çevrimdışı mod düğmesi. Dış alan sabit (diğer öğeler kaymaz); bağlantı kötüyken yuvarlak yüzey büyür.
+ * Açık: dolu vurgu rengi; kapalı: yüzey rengi; büyük: dikkat rengi. Yalnız tema renkleri.
+ */
+@Composable
+fun OfflineModeButton(state: OfflineButtonState, onClick: () -> Unit, modifier: Modifier = Modifier) {
+    if (!state.visible) return
+    val size by androidx.compose.animation.core.animateDpAsState(if (state.enlarged) 58.dp else 44.dp, androidx.compose.animation.core.tween(350), label = "offline-size")
+    val scheme = MaterialTheme.colorScheme
+    val container = when { state.on -> scheme.tertiary; state.enlarged -> scheme.tertiaryContainer; else -> scheme.surface }
+    val content = when { state.on -> scheme.onTertiary; state.enlarged -> scheme.onTertiaryContainer; else -> scheme.primary }
+    val description = when {
+        state.on -> "Çevrimdışı tahmin açık. Kapatmak için dokun."
+        state.enlarged -> "Bağlantı zayıf. Çevrimdışı tahmini açmak için dokun."
+        else -> "Çevrimdışı tahmin kapalı. Açmak için dokun."
+    }
+    Box(modifier.size(58.dp), contentAlignment = Alignment.Center) {
+        Surface(onClick = onClick, enabled = state.clickable, shape = CircleShape, color = container, contentColor = content, shadowElevation = 6.dp,
+            modifier = Modifier.size(size).semantics { stateDescription = if (state.on) "Açık" else "Kapalı"; role = androidx.compose.ui.semantics.Role.Switch }) {
+            Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.CloudOff, description, Modifier.size(if (state.enlarged) 28.dp else 22.dp)) }
+        }
+    }
+}
+
 @Composable
 private fun Freshness(result: ApiResult) {
     val time = runCatching {
         fetchedInstant(result.fetchedAt ?: "").atZone(ZoneId.of("Europe/Istanbul")).format(DateTimeFormatter.ofPattern("d MMM HH:mm", Locale.forLanguageTag("tr")))
     }.getOrNull()
+    if (result.offline) { OfflineNotice(result); return }
     Text(when {
         result.bundled -> "21 Ekim örnek kaydı · güncel veri alınamadı"
         result.stale -> "Son kayıt${time?.let { " · $it" }.orEmpty()} · güncel veri alınamadı"
@@ -903,6 +954,14 @@ private fun SettingsSheet(settings: Settings, vm: TransportViewModel, onDismiss:
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Ayarlar", style = MaterialTheme.typography.titleLarge)
+            Text("Çevrimdışı mod", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+            OfflineMode.entries.forEach { mode ->
+                ListItem(headlineContent = { Text(mode.title) }, supportingContent = { Text(mode.subtitle) },
+                    leadingContent = { RadioButton(selected = settings.offlineMode == mode, onClick = null) },
+                    modifier = Modifier.clickable(role = androidx.compose.ui.semantics.Role.RadioButton) { vm.offlineMode(mode) })
+            }
+            if (settings.offlineMode != OfflineMode.OFF) Text("Tahmin modeli: ${vm.offlineInfo}. Günde bir kez kendiliğinden güncellenir (küçük dosya).",
+                style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp))
             Text("Varış süresi", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
             SettingSwitch(Icons.Outlined.Info, "Kaynak süresi", "Kaynağın verdiği çiğ süreyi göster (durak/ışık payı eklenmeden)", settings.showSourceTime, vm::showSourceTime)
             SettingSwitch(Icons.Outlined.Timer, "Durak payı", "Deneysel: arada kalan her durak için $SECONDS_PER_STOP sn eklenir ve kaç durak olduğunu gösterir", settings.stopPad, vm::stopPad)

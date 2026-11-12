@@ -51,6 +51,28 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     private val refreshMutex = Mutex()
     private var manualRefresh: Job? = null
     private val lastStatic = mutableMapOf<String, Long>()
+    /** Bağlantı kötü mü: son ağ isteği kesinti/hata verdi ya da yalnız eski kayıtla yanıtlandı. Monitor'ün ardışık hata geri çekilmesiyle aynı kaynak (load). */
+    private val _connectionBad = MutableStateFlow(false)
+    val connectionBad = _connectionBad.asStateFlow()
+    /** Son yanıt çevrimdışı tahminden geldi mi (otomatik kipte düğmeyi "açık" gösterir). */
+    private val _servedOffline = MutableStateFlow(false)
+    val offlineButton: StateFlow<OfflineButtonState> = combine(settings, _connectionBad, _servedOffline) { s, bad, served ->
+        OfflinePolicy.button(s.offlineConfig, bad, served)
+    }.stateIn(viewModelScope, SharingStarted.Eagerly, OfflineButtonState(false, false, false, false))
+    val offlineInfo: String get() = app.modelStore.current()?.let {
+        (if (it.source == ModelSource.DOWNLOADED) "indirilen" else "gömülü") + " model · " + it.meta.builtAt.take(10)
+    } ?: "model yok"
+    fun offlineMode(mode: OfflineMode) = action { app.store.setOfflineMode(mode) }
+    /** Düğme: çevrimdışı tahmini aç/kapat (yalnız Düğme kipinde). Otomatik kipte açıklama gösterir. */
+    fun toggleOffline() = action {
+        val s = settings.value
+        when (s.offlineMode) {
+            OfflineMode.BUTTON -> app.store.setOfflineOn(!s.offlineOn)
+            OfflineMode.AUTO -> notify("Otomatik mod: bağlantı kopunca çevrimdışı tahmin kendiliğinden kullanılır. Ayarlardan değiştirebilirsin.")
+            OfflineMode.OFF -> Unit
+        }
+    }
+    private fun pollMillis(base: Long) = if (settings.value.offlineConfig.let { OfflinePolicy.serveBeforeNetwork(it) } || _servedOffline.value) maxOf(base, 60_000L) else base
 
     fun dismissMessage() { _message.value = null }
     fun notify(message: String) { _message.value = message }
@@ -94,7 +116,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     private suspend fun learn(path: String, result: ApiResult?) {
         // Sunucu önbelleğinden gelen aynı ölçüm, otobüsü yanlışlıkla "duruyor" gösterir: aynı zaman damgası bir kez sayılır
         val at = result?.fetchedAt ?: return
-        if (result.isOld() || learnedAt.put(path, at) == at) return
+        if (result.offline || result.isOld() || learnedAt.put(path, at) == at) return
         val vehicles = runCatching { result.arrayData.let(::parseVehicles) }.getOrNull() ?: return
         app.lights.observe(vehicles)
     }
@@ -137,7 +159,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
             }
             _tracked.update { if (it?.key != t.key) it else it.copy(vehicles = r.result, error = r.error
                 ?: if (r.result != null && TrackedBus(t.line, t.plate, t.stop, r.result).vehicle() == null) "Otobüs şu an konum bildirmiyor." else null) }
-            delay(10_000)
+            delay(pollMillis(10_000))
         }
     }
     /** Hat numarasını favorile/çıkar (durak menüsünde rozete uzun basınca). Hat aramadan bulunur. */
@@ -161,9 +183,16 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
     private suspend fun load(path: String, s: Settings = settings.value, live: Boolean = false): LoadState {
-        return try { LoadState(result = withContext(Dispatchers.IO) { repository.fetch(s.server, s.apiKey, path, live) }) }
+        return try {
+            val r = withContext(Dispatchers.IO) { repository.fetch(s.server, s.apiKey, path, live) }
+            if (r.offline) _servedOffline.value = true else { _servedOffline.value = false; _connectionBad.value = r.stale }
+            LoadState(result = r)
+        }
         catch (e: CancellationException) { throw e }
-        catch (e: Exception) { LoadState(error = e.message ?: "Veri alınamadı. Yeniden dene.") }
+        catch (e: Exception) {
+            if ((e as? ApiException)?.kind?.offlineEligible == true) _connectionBad.value = true
+            LoadState(error = e.message ?: "Veri alınamadı. Yeniden dene.")
+        }
     }
     private val _lineStopIds = MutableStateFlow<Map<String, List<Stop>>>(emptyMap())
     /** Hat kimliği (lineId) -> hattın durakları, sıralı. Yenileme sırasında kesilmesin diye hat hat, kademeli dolar. */
@@ -228,7 +257,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
         while (currentCoroutineContext().isActive) {
             _detail.value = loadStop(stop)
             stopVehicles()
-            delay(30_000)
+            delay(pollMillis(30_000))
         }
     }
     /** Yaklaşan otobüslerin hatlarının canlı konumları (en çok 6 hat, ikişer ikişer). */
@@ -252,7 +281,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     }
 
     suspend fun monitor() {
-        settings.map { Triple(it.server, it.apiKey, it.mapLines.filter { line -> line.key in it.selected } to it.showVehicles) }
+        settings.map { Triple(it.server, it.apiKey, Triple(it.mapLines.filter { line -> line.key in it.selected }, it.showVehicles, it.offlineConfig)) }
             .distinctUntilChanged().collectLatest {
                 var consecutiveFailures = 0
                 while (currentCoroutineContext().isActive) {
@@ -264,7 +293,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
                     }
                     // Baglanti kesikken her 15 sn tekrar denemek pil/veri bosa gider: art arda hata biriktikce bekleme suresi
                     // 15 sn -> 30 -> 60 -> 120 sn'ye kadar uzar; basarili istekte hemen 15 sn'ye doner.
-                    delay(15_000L shl consecutiveFailures)
+                    delay(pollMillis(15_000L shl consecutiveFailures))
                 }
             }
     }
