@@ -51,18 +51,43 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     private val refreshMutex = Mutex()
     private var manualRefresh: Job? = null
     private val lastStatic = mutableMapOf<String, Long>()
-    /** Bağlantı kötü mü: son ağ isteği kesinti/hata verdi ya da yalnız eski kayıtla yanıtlandı. Monitor'ün ardışık hata geri çekilmesiyle aynı kaynak (load). */
+    /** Bağlantı kötü mü: son ağ istekleri art arda hata/yavaş (>=4 sn) verdi ya da yalnız eski kayıtla yanıtlandı ([ConnectionQuality] penceresi). Tek başarılı istek kötüyü hemen silmez. */
+    private val quality = ConnectionQuality()
     private val _connectionBad = MutableStateFlow(false)
     val connectionBad = _connectionBad.asStateFlow()
     /** Son yanıt çevrimdışı tahminden geldi mi (otomatik kipte düğmeyi "açık" gösterir). */
     private val _servedOffline = MutableStateFlow(false)
-    val offlineButton: StateFlow<OfflineButtonState> = combine(settings, _connectionBad, _servedOffline) { s, bad, served ->
-        OfflinePolicy.button(s.offlineConfig, bad, served)
+    /** Cihazın ağ durumu zayıf mı (bağlantı yok / doğrulanmamış / düşük bant genişliği); istek yapılmasa da düğmeyi büyütür. */
+    private val _networkWeak = MutableStateFlow(false)
+    private val connectivity = runCatching { app.getSystemService(android.net.ConnectivityManager::class.java) }.getOrNull()
+    private fun evaluate(c: android.net.NetworkCapabilities?) {
+        _networkWeak.value = ConnectionQuality.weakLink(c != null, c?.hasCapability(android.net.NetworkCapabilities.NET_CAPABILITY_VALIDATED) == true, c?.linkDownstreamBandwidthKbps ?: 0)
+    }
+    private val netCallback = object : android.net.ConnectivityManager.NetworkCallback() {
+        override fun onLost(network: android.net.Network) { _networkWeak.value = true }
+        override fun onCapabilitiesChanged(network: android.net.Network, capabilities: android.net.NetworkCapabilities) { evaluate(capabilities) }
+    }
+    init {
+        connectivity?.let { cm ->
+            runCatching { evaluate(cm.activeNetwork?.let(cm::getNetworkCapabilities)) }
+            runCatching { cm.registerDefaultNetworkCallback(netCallback) }
+        }
+    }
+    override fun onCleared() { runCatching { connectivity?.unregisterNetworkCallback(netCallback) } }
+    /** Harita karoları yüklenemedi: ağ sorunu işareti (düğmeyi büyütmek için). */
+    fun mapLoadFailed() {
+        val now = System.nanoTime() / 1_000_000
+        quality.record(false, 5_000, now)
+        _connectionBad.value = quality.isBad(now)
+    }
+    val offlineButton: StateFlow<OfflineButtonState> = combine(settings, _connectionBad, _networkWeak, _servedOffline) { s, bad, weak, served ->
+        OfflinePolicy.button(s.offlineConfig, bad || weak, served)
     }.stateIn(viewModelScope, SharingStarted.Eagerly, OfflineButtonState(false, false, false, false))
     val offlineInfo: String get() = app.modelStore.current()?.let {
         (if (it.source == ModelSource.DOWNLOADED) "indirilen" else "gömülü") + " model · " + it.meta.builtAt.take(10)
     } ?: "model yok"
     fun offlineMode(mode: OfflineMode) = action { app.store.setOfflineMode(mode) }
+    fun themeMode(mode: ThemeMode) = action { app.store.setThemeMode(mode) }
     /** Düğme: çevrimdışı tahmini aç/kapat (yalnız Düğme kipinde). Otomatik kipte açıklama gösterir. */
     fun toggleOffline() = action {
         val s = settings.value
@@ -183,14 +208,20 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
         }
     }
     private suspend fun load(path: String, s: Settings = settings.value, live: Boolean = false): LoadState {
+        val started = System.nanoTime() / 1_000_000
+        fun measure(ok: Boolean) {
+            val now = System.nanoTime() / 1_000_000
+            quality.record(ok, now - started, now)
+            _connectionBad.value = quality.isBad(now)
+        }
         return try {
             val r = withContext(Dispatchers.IO) { repository.fetch(s.server, s.apiKey, path, live) }
-            if (r.offline) _servedOffline.value = true else { _servedOffline.value = false; _connectionBad.value = r.stale }
+            if (r.offline) _servedOffline.value = true else { _servedOffline.value = false; measure(ok = !r.stale) }
             LoadState(result = r)
         }
         catch (e: CancellationException) { throw e }
         catch (e: Exception) {
-            if ((e as? ApiException)?.kind?.offlineEligible == true) _connectionBad.value = true
+            if ((e as? ApiException)?.kind?.offlineEligible == true) measure(ok = false)
             LoadState(error = e.message ?: "Veri alınamadı. Yeniden dene.")
         }
     }

@@ -24,6 +24,7 @@ import org.maplibre.android.style.sources.GeoJsonSource
 import org.maplibre.android.style.expressions.Expression
 
 private const val MAP_STYLE = "https://tiles.openfreemap.org/styles/positron"
+private const val MAP_STYLE_DARK = "https://tiles.openfreemap.org/styles/dark"
 private const val ARROW = "yon-oku"
 private const val FOCUS_SOURCE = "focus-source"
 private const val FOCUS_LAYER = "focus"
@@ -115,7 +116,7 @@ private fun arrowBitmap(): android.graphics.Bitmap {
 
 @Composable
 fun TransportMap(snapshots: List<LineSnapshot>, focus: Stop?, favoritePlates: Set<String>, showVehicles: Boolean, locate: Pair<Long, Coordinate>?, modifier: Modifier = Modifier,
-                 stopRangeMeters: Int = DEFAULT_STOP_RANGE_METERS, showAllStops: Boolean = true,
+                 stopRangeMeters: Int = DEFAULT_STOP_RANGE_METERS, showAllStops: Boolean = true, dark: Boolean = false,
                  follow: Pair<Coordinate, Stop>? = null, onStopClick: (Stop) -> Unit, onVehicleClick: (Line, Vehicle) -> Unit, onPlaceClick: (String, Coordinate) -> Unit, onError: (String?) -> Unit) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -130,8 +131,9 @@ fun TransportMap(snapshots: List<LineSnapshot>, focus: Stop?, favoritePlates: Se
     val vehicleClick by rememberUpdatedState(onVehicleClick)
     val placeClick by rememberUpdatedState(onPlaceClick)
     val reportError by rememberUpdatedState(onError)
-    val holder = remember {
-        MapHolder(context) { reportError(it) }.apply {
+    // Tema değişince harita yeniden kurulur (açık/koyu stil farklı); kamera başlangıca döner.
+    val holder = remember(dark) {
+        MapHolder(context, dark) { reportError(it) }.apply {
             ready = { render(latest, plates, showVehicles = vehiclesOn) }
             clicked = { stopClick(it) }
             vehicleClicked = { line, vehicle -> vehicleClick(line, vehicle) }
@@ -168,8 +170,11 @@ fun TransportMap(snapshots: List<LineSnapshot>, focus: Stop?, favoritePlates: Se
     AndroidView(factory = { holder.view }, modifier = modifier, update = { holder.render(snapshots, favoritePlates, now, showVehicles) })
 }
 
-private class MapHolder(private val context: Context, private val error: (String?) -> Unit) {
+private class MapHolder(private val context: Context, private val dark: Boolean, private val error: (String?) -> Unit) {
     val view: MapView
+    // Koyu stilde etiketler açık renk, halo koyu; açık stilde tersi
+    private val labelColor get() = if (dark) "#E6E6E6" else "#3B4C50"
+    private val haloColor get() = if (dark) "#121212" else "#FFFFFF"
     private var map: MapLibreMap? = null
     private var pendingFocus: Stop? = null
     private var markedStop: Stop? = null
@@ -193,7 +198,10 @@ private class MapHolder(private val context: Context, private val error: (String
     }
     init {
         MapLibre.getInstance(context)
-        view = MapView(context)
+        view = MapView(context, org.maplibre.android.maps.MapLibreMapOptions.createFromAttributes(context)
+            .foregroundLoadColor(android.graphics.Color.parseColor(if (dark) "#121212" else "#EEF1F4")))
+        // Stil yüklenmeden/yüklenemezse görünen zemin temaya uysun
+        view.setBackgroundColor(if (dark) android.graphics.Color.parseColor("#121212") else android.graphics.Color.parseColor("#EEF1F4"))
         view.onCreate(null)
         view.addOnDidFailLoadingMapListener { error("Harita yüklenemedi. Bağlantıyı kontrol et; durak listesi kullanılabilir.") }
         view.getMapAsync { m ->
@@ -202,7 +210,7 @@ private class MapHolder(private val context: Context, private val error: (String
             m.uiSettings.isCompassEnabled = true
             // MapLibre logosu zorunlu değil, kaldırıldı. OpenStreetMap/OpenMapTiles künyesi (i) düğmesinde kalır.
             m.uiSettings.isLogoEnabled = false
-            m.setStyle(Style.Builder().fromUri(MAP_STYLE)) { style ->
+            m.setStyle(Style.Builder().fromUri(if (dark) MAP_STYLE_DARK else MAP_STYLE)) { style ->
                 // Yön oku tek renkli (SDF) çizilir; her hat kendi rengiyle boyar
                 style.addImage(ARROW, arrowBitmap(), true)
                 style.addImage(BUS_HEADING, busBitmap(true), true)
@@ -335,7 +343,7 @@ private class MapHolder(private val context: Context, private val error: (String
         updateNearbyStops(style)
         addStopLayers(style, ALL_STOPS, ALL_STOPS)
         style.addLayer(SymbolLayer("$ALL_STOPS-ad", ALL_STOPS).withProperties(textField(Expression.get("name")), textSize(10f),
-            textColor("#3B4C50"), textHaloColor("#FFFFFF"), textHaloWidth(1.2f), textOffset(arrayOf(0f, 1.6f)), textAnchor(Property.TEXT_ANCHOR_TOP),
+            textColor(labelColor), textHaloColor(haloColor), textHaloWidth(1.2f), textOffset(arrayOf(0f, 1.6f)), textAnchor(Property.TEXT_ANCHOR_TOP),
             textFont(arrayOf("Noto Sans Regular")), textOptional(true)).apply { minZoom = STOP_MIN_ZOOM })
     }
 
@@ -379,17 +387,17 @@ private class MapHolder(private val context: Context, private val error: (String
         style.getSourceAs<GeoJsonSource>(ALL_STOPS)?.let { updateSource(it, ALL_STOPS, JSONObject().put("type", "FeatureCollection").put("features", features).toString()) }
     }
 
-    /** Parklar, bahçeler ve ormanlık alanlar yeşil görünür (Positron bunları neredeyse gri çiziyor). */
+    /** Parklar, bahçeler ve ormanlık alanlar yeşil görünür (Positron bunları neredeyse gri çiziyor); koyu stilde koyu yeşil. */
     private fun greenAreas(style: Style) {
-        style.getLayerAs<FillLayer>("park")?.setProperties(fillColor("#D4E9C8"))
-        style.getLayerAs<FillLayer>("landcover_wood")?.setProperties(fillColor("#C9E2BA"))
+        style.getLayerAs<FillLayer>("park")?.setProperties(fillColor(if (dark) "#1F3524" else "#D4E9C8"))
+        style.getLayerAs<FillLayer>("landcover_wood")?.setProperties(fillColor(if (dark) "#1B2F20" else "#C9E2BA"))
         if (style.getSource("openmaptiles") == null || style.getLayer("yesil-alan") != null) return
-        val green = FillLayer("yesil-alan", "openmaptiles").withProperties(fillColor("#CDE7BF"), fillOpacity(0.9f)).apply {
+        val green = FillLayer("yesil-alan", "openmaptiles").withProperties(fillColor(if (dark) "#1C3021" else "#CDE7BF"), fillOpacity(0.9f)).apply {
             setSourceLayer("landcover"); setFilter(Expression.match(Expression.get("class"), Expression.literal(false),
                 Expression.stop("grass", true), Expression.stop("wood", true)))
         }
         if (style.getLayer("building") != null) style.addLayerBelow(green, "building") else style.addLayer(green)
-        if (style.getLayer("park-alani") == null) style.addLayerBelow(FillLayer("park-alani", "openmaptiles").withProperties(fillColor("#C3E3B0")).apply {
+        if (style.getLayer("park-alani") == null) style.addLayerBelow(FillLayer("park-alani", "openmaptiles").withProperties(fillColor(if (dark) "#223A28" else "#C3E3B0")).apply {
             setSourceLayer("landuse"); setFilter(Expression.match(Expression.get("class"), Expression.literal(false),
                 Expression.stop("park", true), Expression.stop("garden", true), Expression.stop("playground", true), Expression.stop("cemetery", true)))
         }, "yesil-alan")
@@ -415,7 +423,7 @@ private class MapHolder(private val context: Context, private val error: (String
             iconSize(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(11, 0.5f), Expression.stop(16, 0.8f))),
             iconAllowOverlap(true), iconIgnorePlacement(true),
             textField(Expression.step(Expression.zoom(), Expression.literal(""), Expression.stop(13, Expression.get("ad")))),
-            textSize(11f), textColor("#26363A"), textHaloColor("#FFFFFF"), textHaloWidth(1.5f), textFont(arrayOf("Noto Sans Bold")),
+            textSize(11f), textColor(labelColor), textHaloColor(haloColor), textHaloWidth(1.5f), textFont(arrayOf("Noto Sans Bold")),
             textOffset(arrayOf(0f, 1.5f)), textAnchor(Property.TEXT_ANCHOR_TOP), textOptional(true)).apply { minZoom = 10.5f })
     }
 
@@ -485,7 +493,7 @@ private class MapHolder(private val context: Context, private val error: (String
                     // Güzergâh durakların altında, haritanın üstünde: beyaz kenarlı kalın çizgi ve yön okları
                     // Duraklar ayrı kaynakta kalır; güzergâh bu noktalara bağlanmaz.
                     val width = Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(10, 3f), Expression.stop(16, 8f))
-                    val casing = LineLayer("route-casing-$key", sourceId).withProperties(lineColor("#FFFFFF"),
+                    val casing = LineLayer("route-casing-$key", sourceId).withProperties(lineColor(haloColor),
                         lineWidth(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(10, 5f), Expression.stop(16, 12f))),
                         lineOffset(offset), lineCap(Property.LINE_CAP_ROUND), lineJoin(Property.LINE_JOIN_ROUND))
                     val route = LineLayer("route-$key", sourceId).withProperties(lineColor(color), lineWidth(width), lineOffset(offset),
@@ -550,7 +558,7 @@ private class MapHolder(private val context: Context, private val error: (String
                     textColor("#FFFFFF"), textFont(arrayOf("Noto Sans Bold")), textAllowOverlap(true), textIgnorePlacement(true)))
                 // Yakınlaşınca gittiği yer: "→ BİNEVLER"
                 style.addLayer(SymbolLayer("vehicle-dir-$key", busSourceId).withProperties(textField(Expression.get("dest")),
-                    textSize(11f), textColor(color), textHaloColor("#FFFFFF"), textHaloWidth(2f), textFont(arrayOf("Noto Sans Bold")),
+                    textSize(11f), textColor(color), textHaloColor(haloColor), textHaloWidth(2f), textFont(arrayOf("Noto Sans Bold")),
                     textOffset(arrayOf(0f, 2.1f)), textAnchor(Property.TEXT_ANCHOR_TOP), textOptional(true), textMaxWidth(9f)).apply { minZoom = 13.5f })
             }
             style.getLayerAs<SymbolLayer>("vehicles-$key")?.setProperties(iconColor(color))

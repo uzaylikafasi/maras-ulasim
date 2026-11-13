@@ -28,6 +28,7 @@ import androidx.compose.runtime.saveable.Saver
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalUriHandler
@@ -50,6 +51,34 @@ import java.time.format.DateTimeFormatter
 import java.util.Locale
 
 private val teal = Color(0xFF2563EB)
+private val lightColors = lightColorScheme(primary = teal, onPrimary = Color.White, primaryContainer = Color(0xFFDBEAFE), onPrimaryContainer = Color(0xFF1E3A8A),
+    secondary = Color(0xFF0891B2), secondaryContainer = Color(0xFFCFFAFE), onSecondaryContainer = Color(0xFF164E63),
+    tertiary = Color(0xFFEA580C), background = Color(0xFFF8FAFC), onBackground = Color(0xFF0F172A),
+    surface = Color.White, onSurface = Color(0xFF0F172A), surfaceVariant = Color(0xFFF1F5F9), onSurfaceVariant = Color(0xFF475569),
+    surfaceContainer = Color.White, surfaceContainerLow = Color(0xFFF8FAFC), surfaceContainerHigh = Color.White, surfaceContainerHighest = Color(0xFFF1F5F9),
+    outline = Color(0xFFCBD5E1), outlineVariant = Color(0xFFE2E8F0))
+/** Koyu tema: siyah zemin, sarı (amber) vurgu, gri yüzeyler; metin/yüzey kontrastı en az 4,5:1. */
+private val darkColors = darkColorScheme(primary = Color(0xFFFFC107), onPrimary = Color.Black, primaryContainer = Color(0xFF3D3000), onPrimaryContainer = Color(0xFFFFE082),
+    secondary = Color(0xFFB8B8B8), onSecondary = Color.Black, secondaryContainer = Color(0xFF2A2A2A), onSecondaryContainer = Color(0xFFE0E0E0),
+    tertiary = Color(0xFFFFD54F), onTertiary = Color.Black, tertiaryContainer = Color(0xFF4A3B00), onTertiaryContainer = Color(0xFFFFE082),
+    background = Color.Black, onBackground = Color(0xFFEDEDED),
+    surface = Color(0xFF121212), onSurface = Color(0xFFEDEDED), surfaceVariant = Color(0xFF222222), onSurfaceVariant = Color(0xFFB8B8B8),
+    surfaceContainer = Color(0xFF181818), surfaceContainerLow = Color(0xFF0E0E0E), surfaceContainerHigh = Color(0xFF202020), surfaceContainerHighest = Color(0xFF2A2A2A),
+    outline = Color(0xFF6B6B6B), outlineVariant = Color(0xFF3A3A3A), error = Color(0xFFFF6B6B), onError = Color.Black)
+/** Geçerli temanın koyu olup olmadığı (arka plan parlaklığından); sabit renkli birkaç öğe için. */
+private object LocalDark { val current: Boolean @Composable get() = MaterialTheme.colorScheme.background.luminance() < 0.5f }
+/** Durum çubuğu ve gezinme çubuğu simgeleri temaya göre; çubuklar saydam (kenardan kenara). */
+@Composable
+private fun SystemBarsEffect(dark: Boolean) {
+    val view = androidx.compose.ui.platform.LocalView.current
+    if (!view.isInEditMode) SideEffect {
+        val window = (view.context as? android.app.Activity)?.window ?: return@SideEffect
+        val controller = androidx.core.view.WindowCompat.getInsetsController(window, view)
+        controller.isAppearanceLightStatusBars = !dark
+        controller.isAppearanceLightNavigationBars = !dark
+        window.navigationBarColor = if (dark) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+    }
+}
 private fun hex(value: String) = Color(android.graphics.Color.parseColor(value))
 private val mapCardShape = RoundedCornerShape(24.dp)
 private val stopSaver = Saver<Stop?, String>(save = { it?.json()?.toString() ?: "" }, restore = {
@@ -58,14 +87,11 @@ private val stopSaver = Saver<Stop?, String>(save = { it?.json()?.toString() ?: 
 
 @Composable
 fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Double, Double) -> Unit) -> Unit, showTracking: Boolean = false, onTrackingHandled: () -> Unit = {}) {
-    // Açık ve renkli tema (Ömer'in seçimi): ulaşım mavisi, beyaz yüzeyler, parlak hat renkleri
-    val colors = lightColorScheme(primary = teal, onPrimary = Color.White, primaryContainer = Color(0xFFDBEAFE), onPrimaryContainer = Color(0xFF1E3A8A),
-        secondary = Color(0xFF0891B2), secondaryContainer = Color(0xFFCFFAFE), onSecondaryContainer = Color(0xFF164E63),
-        tertiary = Color(0xFFEA580C), background = Color(0xFFF8FAFC), onBackground = Color(0xFF0F172A),
-        surface = Color.White, onSurface = Color(0xFF0F172A), surfaceVariant = Color(0xFFF1F5F9), onSurfaceVariant = Color(0xFF475569),
-        surfaceContainer = Color.White, surfaceContainerLow = Color(0xFFF8FAFC), surfaceContainerHigh = Color.White, surfaceContainerHighest = Color(0xFFF1F5F9),
-        outline = Color(0xFFCBD5E1), outlineVariant = Color(0xFFE2E8F0))
-    MaterialTheme(colorScheme = colors) {
+    // Tema: Sistem (varsayılan) / Açık / Koyu. Açık: Ömer'in ulaşım mavisi; Koyu: siyah zemin, sarı vurgu, gri yüzeyler.
+    val themeMode = vm.settings.collectAsStateWithLifecycle().value.themeMode
+    val dark = ThemeMode.isDark(themeMode, isSystemInDarkTheme())
+    SystemBarsEffect(dark)
+    MaterialTheme(colorScheme = if (dark) darkColors else lightColors) {
         UpdatePrompt()
         val settings by vm.settings.collectAsStateWithLifecycle()
         val snapshots by vm.snapshots.collectAsStateWithLifecycle()
@@ -133,7 +159,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                         onTrackedInfo = { t -> openedArrival=t.stop to Arrival(t.line.code,t.plate,"Süre belirtilmedi",t.vehicle()?.nextStop.orEmpty(),name=t.line.name,direction=t.line.directionName,lineId=t.line.id.toString()) },
                         onSearch = { tab = 1 }, onLine = { openedLine = it }, onSelect = vm::select, onRemove = vm::removeFromMap,
                         onVehicle = { line, vehicle -> openedVehicle = line to vehicle }, onShowVehicles = vm::showVehicles, onRefresh = vm::refresh,
-                        offline = offlineButton, onOffline = vm::toggleOffline,
+                        offline = offlineButton, onOffline = vm::toggleOffline, onMapFailed = vm::mapLoadFailed,
                         onNearby = { nearbyTitle = null; sheet = "nearby"; vm.prepareNearby(); onNearby() }, onLocate = onLocate,
                         onPlace = { name, at -> nearbyTitle = name; sheet = "nearby"; vm.nearby(at.latitude, at.longitude) })
                     1 -> SearchScreen(query, onQuery = { query = it; vm.search(it) }, search, settings, vm::favorite, vm::favorite,
@@ -356,7 +382,7 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
                       onSearch: () -> Unit, onLine: (Line) -> Unit, onSelect: (Line) -> Unit, onRemove: (Line) -> Unit,
                       onVehicle: (Line, Vehicle) -> Unit, onShowVehicles: (Boolean) -> Unit, onRefresh: () -> Unit,
                       onNearby: () -> Unit, onLocate: ((Double, Double) -> Unit) -> Unit, onPlace: (String, Coordinate) -> Unit,
-                      offline: OfflineButtonState = OfflineButtonState(false, false, false, false), onOffline: () -> Unit = {}) {
+                      offline: OfflineButtonState = OfflineButtonState(false, false, false, false), onOffline: () -> Unit = {}, onMapFailed: () -> Unit = {}) {
     var locate by remember { mutableStateOf<Pair<Long, Coordinate>?>(null) }
     var mapError by remember { mutableStateOf<String?>(null) }
     var mapAttempt by remember { mutableIntStateOf(0) }
@@ -368,13 +394,13 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
     Box(Modifier.fillMaxSize()) {
         key(mapAttempt) {
             TransportMap(snapshots, focus, settings.plates, tracked != null || settings.showVehicles, locate, Modifier.fillMaxSize(),
-                stopRangeMeters = settings.stopRangeMeters, showAllStops = settings.showAllStops,
+                stopRangeMeters = settings.stopRangeMeters, showAllStops = settings.showAllStops, dark = LocalDark.current,
                 follow = tracked?.let { t -> trackedBus?.let { it.coordinate to t.stop } }, onStopClick = onStop, onVehicleClick = onVehicle,
-                onPlaceClick = onPlace, onError = { mapError = it })
+                onPlaceClick = onPlace, onError = { mapError = it; if (it != null) onMapFailed() })
         }
         Column(Modifier.align(Alignment.TopStart).padding(12.dp).widthIn(max = 620.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
             Row(verticalAlignment = Alignment.CenterVertically, horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                Surface(onClick = onSearch, modifier = Modifier.weight(1f), shape = mapCardShape, color = Color.White, shadowElevation = 6.dp) {
+                Surface(onClick = onSearch, modifier = Modifier.weight(1f), shape = mapCardShape, color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Search, null, tint = MaterialTheme.colorScheme.primary)
                         Text("Hat veya durak ara", Modifier.padding(start = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
@@ -386,7 +412,7 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
                 OfflineModeButton(offline, onOffline)
             }
             tracked?.let { t ->
-                Surface(modifier = Modifier.widthIn(max = 420.dp), shape = mapCardShape, color = Color.White, shadowElevation = 4.dp) {
+                Surface(modifier = Modifier.widthIn(max = 420.dp), shape = mapCardShape, color = MaterialTheme.colorScheme.surface, shadowElevation = 4.dp) {
                     Row(Modifier.padding(start = 10.dp, end = 2.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
                         Surface(color = hex(badgeColorFor(t.line.code)), contentColor = Color.White, shape = RoundedCornerShape(10.dp)) {
                             Text(t.line.code, Modifier.padding(horizontal = 6.dp, vertical = 3.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
@@ -409,13 +435,13 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
                     val line = groups.getValue(code).first()
                     val on = settings.isOnMap(code)
                     val color = if (on) hex(lineColorFor(code, settings.visibleCodes())) else Color(0xFF94A3B8)
-                    Surface(onClick = { onSelect(line) }, shape = RoundedCornerShape(50), color = if (on) color else Color.White, shadowElevation = 4.dp,
+                    Surface(onClick = { onSelect(line) }, shape = RoundedCornerShape(50), color = if (on) color else MaterialTheme.colorScheme.surface, shadowElevation = 4.dp,
                         modifier = Modifier.animateItem()) {
                         Row(Modifier.padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
                             Icon(Icons.Outlined.DirectionsBus, null, Modifier.size(16.dp), tint = if (on) Color.White else color)
-                            Text(code, Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold, color = if (on) Color.White else Color(0xFF334155))
+                            Text(code, Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold, color = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
                             IconButton(onClick = { onRemove(line) }, modifier = Modifier.size(36.dp)) {
-                                Icon(Icons.Outlined.Close, "$code hattını haritadan kaldır", Modifier.size(16.dp), tint = if (on) Color.White else Color(0xFF64748B))
+                                Icon(Icons.Outlined.Close, "$code hattını haritadan kaldır", Modifier.size(16.dp), tint = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -432,7 +458,7 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
         }
         // Konumum: izin istenir, mavi nokta açılır ve harita konuma gelir
         SmallFloatingActionButton(onClick = { onLocate { lat, lng -> locate = System.currentTimeMillis() to Coordinate(lat, lng) } }, modifier = Modifier.align(Alignment.BottomEnd).padding(end = 16.dp, bottom = 148.dp),
-            containerColor = Color.White, contentColor = MaterialTheme.colorScheme.primary, shape = CircleShape) {
+            containerColor = MaterialTheme.colorScheme.surface, contentColor = MaterialTheme.colorScheme.primary, shape = CircleShape) {
             Icon(Icons.Outlined.GpsFixed, "Konumuma git")
         }
         // Yakınımdaki duraklar: konumdan en yakın duraklar ve yaklaşan otobüsler
@@ -442,18 +468,18 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
         androidx.compose.animation.AnimatedVisibility(visible = snapshots.isEmpty(), modifier = Modifier.align(Alignment.BottomStart).padding(12.dp).widthIn(max = 420.dp),
             enter = androidx.compose.animation.fadeIn() + androidx.compose.animation.slideInVertically { it / 2 },
             exit = androidx.compose.animation.fadeOut() + androidx.compose.animation.slideOutVertically { it / 2 }) {
-            Surface(shape = mapCardShape, color = Color.White, shadowElevation = 6.dp) {
+            Surface(shape = mapCardShape, color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
                 Row(Modifier.padding(14.dp), verticalAlignment = Alignment.CenterVertically) {
                     Surface(color = MaterialTheme.colorScheme.primaryContainer, shape = CircleShape) {
                         Icon(Icons.Outlined.TipsAndUpdates, null, Modifier.padding(8.dp).size(20.dp), tint = MaterialTheme.colorScheme.primary)
                     }
                     Text("Bir hat ara ya da haritada durağa, önemli bir yere dokun.", Modifier.padding(start = 12.dp),
-                        style = MaterialTheme.typography.bodyMedium, color = Color(0xFF334155))
+                        style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 }
             }
         }
         // Küçük özet: yalnız görünen hat varken; dokununca ayrıntılar açılır
-        if (snapshots.isNotEmpty()) Surface(Modifier.align(Alignment.BottomStart).padding(12.dp).widthIn(max = 440.dp), shape = mapCardShape, color = Color.White, shadowElevation = 6.dp) {
+        if (snapshots.isNotEmpty()) Surface(Modifier.align(Alignment.BottomStart).padding(12.dp).widthIn(max = 440.dp), shape = mapCardShape, color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
             Column(Modifier.padding(14.dp).animateContentSize(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                 Row(Modifier.clickable { expanded = !expanded }, verticalAlignment = Alignment.CenterVertically) {
                     val codes = snapshots.map { it.line.code }.distinct()
@@ -508,8 +534,8 @@ private fun stopLineCodes(context: android.content.Context): Map<Long, List<Stri
 
 @Composable
 private fun MapRoundButton(icon: ImageVector, label: String, active: Boolean = false, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = CircleShape, color = if (active) MaterialTheme.colorScheme.primary else Color.White, shadowElevation = 6.dp,
-        contentColor = if (active) Color.White else MaterialTheme.colorScheme.primary) {
+    Surface(onClick = onClick, shape = CircleShape, color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, shadowElevation = 6.dp,
+        contentColor = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary) {
         Icon(icon, label, Modifier.padding(13.dp).size(24.dp))
     }
 }
@@ -517,8 +543,8 @@ private fun MapRoundButton(icon: ImageVector, label: String, active: Boolean = f
 @Composable
 private fun QuickAction(icon: ImageVector, label: String, modifier: Modifier = Modifier, selected: Boolean = false, onClick: () -> Unit) {
     Surface(onClick = onClick, modifier = modifier, shape = RoundedCornerShape(16.dp),
-        color = if (selected) Color(0xFFFEF3C7) else MaterialTheme.colorScheme.primaryContainer,
-        contentColor = if (selected) Color(0xFFB45309) else MaterialTheme.colorScheme.onPrimaryContainer) {
+        color = if (selected) (if (LocalDark.current) Color(0xFF4A3B00) else Color(0xFFFEF3C7)) else MaterialTheme.colorScheme.primaryContainer,
+        contentColor = if (selected) (if (LocalDark.current) Color(0xFFFFE082) else Color(0xFFB45309)) else MaterialTheme.colorScheme.onPrimaryContainer) {
         Column(Modifier.padding(vertical = 12.dp), horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Icon(icon, null, Modifier.size(22.dp))
             Text(label, style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.SemiBold, maxLines = 1)
@@ -558,7 +584,7 @@ private fun ArrivalCard(arrival: Arrival, stopsBetween: Int? = null, lightsAhead
                 if (sourceParts.isNotEmpty()) Text(sourceParts.joinToString(" · "),
                     style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (waitingAtLight && settings.lightPad) Text("Işık yakınında bekliyor", style = MaterialTheme.typography.labelMedium,
-                    fontWeight = FontWeight.SemiBold, color = Color(0xFFDC2626))
+                    fontWeight = FontWeight.SemiBold, color = if (LocalDark.current) Color(0xFFFF8A80) else Color(0xFFDC2626))
                 Text(listOfNotNull(arrival.distance.takeIf { it.isNotBlank() }, arrival.plate.takeIf { it.isNotBlank() }).joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                 if (arrival.nextStop.isNotBlank()) Text("Sonraki durak: ${arrival.nextStop}", style = MaterialTheme.typography.bodySmall,
@@ -954,6 +980,12 @@ private fun SettingsSheet(settings: Settings, vm: TransportViewModel, onDismiss:
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Ayarlar", style = MaterialTheme.typography.titleLarge)
+            Text("Tema", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+            ThemeMode.entries.forEach { mode ->
+                ListItem(headlineContent = { Text(mode.title) }, supportingContent = { Text(mode.subtitle) },
+                    leadingContent = { RadioButton(selected = settings.themeMode == mode, onClick = null) },
+                    modifier = Modifier.clickable(role = androidx.compose.ui.semantics.Role.RadioButton) { vm.themeMode(mode) })
+            }
             Text("Çevrimdışı mod", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
             OfflineMode.entries.forEach { mode ->
                 ListItem(headlineContent = { Text(mode.title) }, supportingContent = { Text(mode.subtitle) },
