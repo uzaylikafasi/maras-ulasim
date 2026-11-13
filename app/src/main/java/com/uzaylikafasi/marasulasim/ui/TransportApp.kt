@@ -56,7 +56,11 @@ private val lightColors = lightColorScheme(primary = teal, onPrimary = Color.Whi
     tertiary = Color(0xFFEA580C), background = Color(0xFFF8FAFC), onBackground = Color(0xFF0F172A),
     surface = Color.White, onSurface = Color(0xFF0F172A), surfaceVariant = Color(0xFFF1F5F9), onSurfaceVariant = Color(0xFF475569),
     surfaceContainer = Color.White, surfaceContainerLow = Color(0xFFF8FAFC), surfaceContainerHigh = Color.White, surfaceContainerHighest = Color(0xFFF1F5F9),
-    outline = Color(0xFFCBD5E1), outlineVariant = Color(0xFFE2E8F0))
+    outline = Color(0xFFCBD5E1), outlineVariant = Color(0xFFE2E8F0),
+    onSecondary = Color.White, onTertiary = Color.White, tertiaryContainer = Color(0xFFFFEDD5), onTertiaryContainer = Color(0xFF7C2D12),
+    error = Color(0xFFDC2626), onError = Color.White, errorContainer = Color(0xFFFEE2E2), onErrorContainer = Color(0xFF7F1D1D),
+    inverseSurface = Color(0xFF1E293B), inverseOnSurface = Color(0xFFF1F5F9), inversePrimary = Color(0xFF93C5FD),
+    surfaceDim = Color(0xFFE2E8F0), surfaceBright = Color.White, surfaceContainerLowest = Color.White, surfaceTint = Color(0xFF2563EB))
 /** Koyu tema: siyah zemin, sarı (amber) vurgu, gri yüzeyler; metin/yüzey kontrastı en az 4,5:1. */
 private val darkColors = darkColorScheme(primary = Color(0xFFFFC107), onPrimary = Color.Black, primaryContainer = Color(0xFF3D3000), onPrimaryContainer = Color(0xFFFFE082),
     secondary = Color(0xFFB8B8B8), onSecondary = Color.Black, secondaryContainer = Color(0xFF2A2A2A), onSecondaryContainer = Color(0xFFE0E0E0),
@@ -64,7 +68,10 @@ private val darkColors = darkColorScheme(primary = Color(0xFFFFC107), onPrimary 
     background = Color.Black, onBackground = Color(0xFFEDEDED),
     surface = Color(0xFF121212), onSurface = Color(0xFFEDEDED), surfaceVariant = Color(0xFF222222), onSurfaceVariant = Color(0xFFB8B8B8),
     surfaceContainer = Color(0xFF181818), surfaceContainerLow = Color(0xFF0E0E0E), surfaceContainerHigh = Color(0xFF202020), surfaceContainerHighest = Color(0xFF2A2A2A),
-    outline = Color(0xFF6B6B6B), outlineVariant = Color(0xFF3A3A3A), error = Color(0xFFFF6B6B), onError = Color.Black)
+    outline = Color(0xFF6B6B6B), outlineVariant = Color(0xFF3A3A3A), error = Color(0xFFFF6B6B), onError = Color.Black,
+    errorContainer = Color(0xFF3A1212), onErrorContainer = Color(0xFFFFB4AB),
+    inverseSurface = Color(0xFFEDEDED), inverseOnSurface = Color(0xFF121212), inversePrimary = Color(0xFF6B5300),
+    surfaceDim = Color(0xFF0A0A0A), surfaceBright = Color(0xFF2E2E2E), surfaceContainerLowest = Color(0xFF080808), surfaceTint = Color(0xFFFFC107))
 /** Geçerli temanın koyu olup olmadığı (arka plan parlaklığından); sabit renkli birkaç öğe için. */
 private object LocalDark { val current: Boolean @Composable get() = MaterialTheme.colorScheme.background.luminance() < 0.5f }
 /** Durum çubuğu ve gezinme çubuğu simgeleri temaya göre; çubuklar saydam (kenardan kenara). */
@@ -77,6 +84,9 @@ private fun SystemBarsEffect(dark: Boolean) {
         controller.isAppearanceLightStatusBars = !dark
         controller.isAppearanceLightNavigationBars = !dark
         window.navigationBarColor = if (dark) android.graphics.Color.BLACK else android.graphics.Color.WHITE
+        window.statusBarColor = android.graphics.Color.TRANSPARENT
+        // Pencere zemini sistem temasına değil uygulama temasına uysun (telefon koyu, uygulama açıkken siyah şerit kalmasın ve tersi)
+        window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(if (dark) android.graphics.Color.BLACK else android.graphics.Color.parseColor("#F8FAFC")))
     }
 }
 private fun hex(value: String) = Color(android.graphics.Color.parseColor(value))
@@ -139,7 +149,8 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
         LaunchedEffect(openedLine) { openedLine?.let { if (snapshots[it.key]?.stops == null) vm.lineStops(it) } }
         val names = listOf("Harita", "Ara", "Yolculuk", "Favoriler", "Diğer")
         val icons = listOf(Icons.Outlined.Map, Icons.Outlined.Search, Icons.Outlined.Route, Icons.Outlined.StarOutline, Icons.Outlined.MoreHoriz)
-        Scaffold(snackbarHost = { SnackbarHost(snackbar) }, topBar = {
+        Scaffold(snackbarHost = { SnackbarHost(snackbar) { data -> Snackbar(data, containerColor = MaterialTheme.colorScheme.surfaceContainerHighest,
+            contentColor = MaterialTheme.colorScheme.onSurface, actionColor = MaterialTheme.colorScheme.primary) } }, topBar = {
             if (tab != 0) TopAppBar(title = { Column {
                 Text(if (tab == 0) "Maraş Ulaşım" else names[tab], fontWeight = FontWeight.SemiBold)
                 if (tab == 0) Text("Hatların, tek haritada", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
@@ -403,7 +414,8 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
                 Surface(onClick = onSearch, modifier = Modifier.weight(1f), shape = mapCardShape, color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp) {
                     Row(Modifier.padding(horizontal = 16.dp, vertical = 14.dp), verticalAlignment = Alignment.CenterVertically) {
                         Icon(Icons.Outlined.Search, null, tint = MaterialTheme.colorScheme.primary)
-                        Text("Hat veya durak ara", Modifier.padding(start = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        Text("Ara", Modifier.padding(start = 12.dp), color = MaterialTheme.colorScheme.onSurfaceVariant, style = MaterialTheme.typography.bodyMedium, maxLines = 1,
+                            overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                     }
                 }
                 if(tracked==null) MapRoundButton(if (settings.showVehicles) Icons.Outlined.DirectionsBus else Icons.Outlined.BusAlert,
@@ -534,8 +546,9 @@ private fun stopLineCodes(context: android.content.Context): Map<Long, List<Stri
 
 @Composable
 private fun MapRoundButton(icon: ImageVector, label: String, active: Boolean = false, onClick: () -> Unit) {
-    Surface(onClick = onClick, shape = CircleShape, color = if (active) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.surface, shadowElevation = 6.dp,
-        contentColor = if (active) MaterialTheme.colorScheme.onPrimary else MaterialTheme.colorScheme.primary) {
+    Surface(onClick = onClick, shape = CircleShape, color = MaterialTheme.colorScheme.surface, shadowElevation = 6.dp,
+        border = if (active) androidx.compose.foundation.BorderStroke(2.dp, MaterialTheme.colorScheme.primary) else null,
+        contentColor = MaterialTheme.colorScheme.primary) {
         Icon(icon, label, Modifier.padding(13.dp).size(24.dp))
     }
 }
@@ -798,8 +811,10 @@ private fun StopRow(stop: Stop, favorite: Boolean, onClick: () -> Unit, onFavori
     }
 }
 @Composable
-private fun CodeBadge(code: String, color: Color = teal) {
-    Surface(color = color, contentColor = Color.White, shape = RoundedCornerShape(10.dp)) {
+private fun CodeBadge(code: String, color: Color = Color.Unspecified) {
+    val themed = color == Color.Unspecified
+    Surface(color = if (themed) MaterialTheme.colorScheme.primary else color,
+        contentColor = if (themed) MaterialTheme.colorScheme.onPrimary else Color.White, shape = RoundedCornerShape(10.dp)) {
         Text(code, Modifier.padding(horizontal = 10.dp, vertical = 10.dp), fontWeight = FontWeight.Bold)
     }
 }
@@ -820,7 +835,7 @@ private fun OfflineNotice(result: ApiResult) {
     val built = result.fetchedAt?.let { runCatching { fetchedInstant(it).atZone(ZoneId.of("Europe/Istanbul")).format(DateTimeFormatter.ofPattern("HH:mm")) }.getOrNull() }
     Surface(color = MaterialTheme.colorScheme.tertiaryContainer, contentColor = MaterialTheme.colorScheme.onTertiaryContainer, shape = RoundedCornerShape(10.dp)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Icon(Icons.Outlined.CloudOff, null, Modifier.size(20.dp))
+            Icon(Icons.Outlined.WifiOff, null, Modifier.size(20.dp))
             Column(Modifier.padding(start = 10.dp)) {
                 Text("Çevrimdışı tahmin", fontWeight = FontWeight.SemiBold, style = MaterialTheme.typography.bodyMedium)
                 Text("Canlı veri yok${built?.let { " · $it" }.orEmpty()}. Süreler tarife ve geçmiş ölçümlere dayanır; otobüsün gerçek konumu değildir.",
@@ -837,7 +852,7 @@ private fun OfflineNotice(result: ApiResult) {
 @Composable
 fun OfflineModeButton(state: OfflineButtonState, onClick: () -> Unit, modifier: Modifier = Modifier) {
     if (!state.visible) return
-    val size by androidx.compose.animation.core.animateDpAsState(if (state.enlarged) 58.dp else 44.dp, androidx.compose.animation.core.tween(350), label = "offline-size")
+    val size by androidx.compose.animation.core.animateDpAsState(if (state.enlarged) 58.dp else 50.dp, androidx.compose.animation.core.tween(350), label = "offline-size")
     val scheme = MaterialTheme.colorScheme
     val container = when { state.on -> scheme.tertiary; state.enlarged -> scheme.tertiaryContainer; else -> scheme.surface }
     val content = when { state.on -> scheme.onTertiary; state.enlarged -> scheme.onTertiaryContainer; else -> scheme.primary }
@@ -849,7 +864,7 @@ fun OfflineModeButton(state: OfflineButtonState, onClick: () -> Unit, modifier: 
     Box(modifier.size(58.dp), contentAlignment = Alignment.Center) {
         Surface(onClick = onClick, enabled = state.clickable, shape = CircleShape, color = container, contentColor = content, shadowElevation = 6.dp,
             modifier = Modifier.size(size).semantics { stateDescription = if (state.on) "Açık" else "Kapalı"; role = androidx.compose.ui.semantics.Role.Switch }) {
-            Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.CloudOff, description, Modifier.size(if (state.enlarged) 28.dp else 22.dp)) }
+            Box(contentAlignment = Alignment.Center) { Icon(Icons.Outlined.WifiOff, description, Modifier.size(if (state.enlarged) 28.dp else 24.dp)) }
         }
     }
 }
