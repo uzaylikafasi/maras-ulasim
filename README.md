@@ -6,18 +6,19 @@
 
 <p align="center">
   Kahramanmaraş otobüsleri için Android uygulaması.<br>
-  Hatları haritada canlı izle, durağa yaklaşan otobüsleri gör, favorilerini kaydet.
+  Hatları haritada canlı izle, durağa yaklaşan otobüsleri gör, favorilerini kaydet.<br>
+  İnternet zayıfken ya da yokken çevrimdışı tahminle yola devam et; koyu temayı kullan.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-1.1.1-2563EB" alt="Sürüm 1.1.1">
+  <img src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-1.2.0-2563EB" alt="Sürüm 1.2.0">
   <img src="https://img.shields.io/badge/Android-8.0%2B-2563EB" alt="Android 8.0 ve üzeri">
   <a href="LICENSE"><img src="https://img.shields.io/badge/lisans-MIT-2563EB" alt="MIT lisansı"></a>
 </p>
 
 <p align="center">
-  <a href="https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.1.1">
-    <img src="https://img.shields.io/badge/APK_indir-1.1.1-2563EB?style=for-the-badge" alt="APK indir — sürüm 1.1.1">
+  <a href="https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.2.0">
+    <img src="https://img.shields.io/badge/APK_indir-1.2.0-2563EB?style=for-the-badge" alt="APK indir — sürüm 1.2.0">
   </a>
 </p>
 
@@ -27,23 +28,25 @@
 
 <table>
   <tr>
-    <td align="center"><a href="docs/ekran/harita.png"><img src="docs/ekran/harita.png" width="170" alt="H/1 hattının güzergâhı ve canlı otobüsler"></a></td>
-    <td align="center"><a href="docs/ekran/araclar.png"><img src="docs/ekran/araclar.png" width="170" alt="H/1 hattında gidiş ve dönüşteki araç sayıları"></a></td>
-    <td align="center"><a href="docs/ekran/durak.png"><img src="docs/ekran/durak.png" width="170" alt="Durak menüsü ve Sadece favorilerim filtresi"></a></td>
-    <td align="center"><a href="docs/ekran/duraklar.png"><img src="docs/ekran/duraklar.png" width="170" alt="Haritaya yakından bakıldığında görünen turuncu durak işaretleri"></a></td>
+    <td align="center"><a href="docs/ekran/harita.png"><img src="docs/ekran/harita.png" width="170" alt="Koyu temada hat güzergâhı ve canlı otobüsler"></a></td>
+    <td align="center"><a href="docs/ekran/durak.png"><img src="docs/ekran/durak.png" width="170" alt="Durak menüsü ve yaklaşan otobüsler"></a></td>
+    <td align="center"><a href="docs/ekran/cevrimdisi.png"><img src="docs/ekran/cevrimdisi.png" width="170" alt="Bağlantı yokken çevrimdışı tahmin kartı"></a></td>
+    <td align="center"><a href="docs/ekran/ayarlar.png"><img src="docs/ekran/ayarlar.png" width="170" alt="Tema, koyu harita ve çevrimdışı mod ayarları"></a></td>
     <td align="center"><a href="docs/ekran/diger.png"><img src="docs/ekran/diger.png" width="170" alt="Duyurular, hatırlatmalar ve bağlantıların bulunduğu Diğer ekranı"></a></td>
   </tr>
   <tr>
     <td align="center">Canlı otobüsler</td>
-    <td align="center">Gidiş ve dönüş araçları</td>
     <td align="center">Durak menüsü</td>
-    <td align="center">Haritada duraklar</td>
+    <td align="center">Çevrimdışı tahmin</td>
+    <td align="center">Tema ve çevrimdışı ayarları</td>
     <td align="center">Diğer ekranı</td>
   </tr>
 </table>
 
 ## Özellikler
 
+- **Çevrimdışı mod (yeni, 1.2.0):** Bağlantı kötüyken sağ üstteki bulut düğmesi büyür; dokununca süreler tarifeden ve geçmiş ölçümlerden tahmin edilir. “Çevrimdışı tahmin” kartı bunu açıkça belirtir; tahmin otobüsün gerçek konumu değildir. Model küçük bir dosyadır, günde bir kez kendiliğinden güncellenir. Ayarlar > Çevrimdışı mod: Düğme (varsayılan), Otomatik, Kapalı.
+- **Koyu tema (yeni, 1.2.0):** Ayarlar > Tema: Sistem (varsayılan), Açık, Koyu (siyah zemin, sarı vurgu, gri yüzeyler). Koyu temada harita da koyulaşır; istersen “Koyu temada koyu harita” ayarını kapatıp haritayı açık bırakabilirsin.
 - **Canlı harita:** Hatları gidiş ve dönüş yönleriyle aynı anda 4 hatta kadar izle. Otobüs işaretleri aracın yönünü gösterir.
 - **Durak bilgileri:** Durağa dokunarak yaklaşan otobüsleri gör. “Sadece favorilerim” filtresiyle yalnızca favori hatlarını göster.
 - **Yakındaki duraklar:** Yakınındaki durakları ve bu duraklardan geçen hatları bul.
@@ -57,7 +60,7 @@
 
 ## Kurulum
 
-1. [1.1.1 sürümünün APK dosyasını indir](https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.1.1).
+1. [1.2.0 sürümünün APK dosyasını indir](https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.2.0).
 2. İndirdiğin APK dosyasını aç.
 3. Android istediğinde, dosyayı açtığın uygulamaya “bilinmeyen kaynaklardan yükleme” izni ver ve kurulumu tamamla.
 
