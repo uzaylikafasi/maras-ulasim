@@ -22,7 +22,7 @@ data class Settings(val server: String = DEFAULT_SERVER, val apiKey: String = ""
                     val favoritesOnly: Boolean = false, val stopPad: Boolean = false, val lightPad: Boolean = false,
                     val trackOnTap: Boolean = false, val showSourceTime: Boolean = true, val stopRangeMeters: Int = DEFAULT_STOP_RANGE_METERS,
                     val showAllStops: Boolean = true, val offlineMode: OfflineMode = OfflineMode.BUTTON, val offlineOn: Boolean = false,
-                    val themeMode: ThemeMode = ThemeMode.SYSTEM) {
+                    val themeMode: ThemeMode = ThemeMode.SYSTEM, val darkMap: Boolean = true) {
     val offlineConfig get() = OfflineConfig(offlineMode, offlineOn)
     val favoriteCodes: Set<String> get() = lines.map { it.code }.toSet()
 }
@@ -44,6 +44,7 @@ class LocalStore(private val context: Context) {
     private val offlineMode = stringPreferencesKey("offline_mode")
     private val offlineOn = androidx.datastore.preferences.core.booleanPreferencesKey("offline_on")
     private val themeMode = stringPreferencesKey("theme_mode")
+    private val darkMap = androidx.datastore.preferences.core.booleanPreferencesKey("dark_map")
     val settings = context.preferences.data.catch { e -> if (e is IOException) emit(emptyPreferences()) else throw e }.map { p ->
         // 1.0: sunucu sabit (Ömer: "adres sabit kalsın"); eski özel adres ve anahtar artık kullanılmaz
         Settings(DEFAULT_SERVER, "",
@@ -55,7 +56,7 @@ class LocalStore(private val context: Context) {
             p[showVehicles] ?: true, p[favoritesOnly] ?: false,
             p[stopPad] ?: false, p[lightPad] ?: false, p[trackOnTap] ?: false,
             p[showSourceTime] ?: true, p[stopRangeMeters] ?: DEFAULT_STOP_RANGE_METERS, p[showAllStops] ?: true,
-            OfflineMode.fromKey(p[offlineMode]), p[offlineOn] ?: false, ThemeMode.fromKey(p[themeMode]))
+            OfflineMode.fromKey(p[offlineMode]), p[offlineOn] ?: false, ThemeMode.fromKey(p[themeMode]), p[darkMap] ?: true)
     }
     suspend fun toggleLine(line: Line) { context.preferences.edit { p ->
         val values = decodeLines(p[lines]).toMutableList()
@@ -109,6 +110,7 @@ class LocalStore(private val context: Context) {
     suspend fun setOfflineMode(value: OfflineMode) { context.preferences.edit { it[offlineMode] = value.key } }
     suspend fun setOfflineOn(value: Boolean) { context.preferences.edit { it[offlineOn] = value } }
     suspend fun setThemeMode(value: ThemeMode) { context.preferences.edit { it[themeMode] = value.key } }
+    suspend fun setDarkMap(value: Boolean) { context.preferences.edit { it[darkMap] = value } }
     suspend fun setShowAllStops(value: Boolean) { context.preferences.edit { it[showAllStops] = value } }
     /** Hat numarasını (bütün yönleriyle) favorilerden çıkarır. */
     suspend fun removeLineCode(code: String) { context.preferences.edit { p ->

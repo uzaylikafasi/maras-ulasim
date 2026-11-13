@@ -394,7 +394,7 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
     Box(Modifier.fillMaxSize()) {
         key(mapAttempt) {
             TransportMap(snapshots, focus, settings.plates, tracked != null || settings.showVehicles, locate, Modifier.fillMaxSize(),
-                stopRangeMeters = settings.stopRangeMeters, showAllStops = settings.showAllStops, dark = LocalDark.current,
+                stopRangeMeters = settings.stopRangeMeters, showAllStops = settings.showAllStops, dark = LocalDark.current && settings.darkMap,
                 follow = tracked?.let { t -> trackedBus?.let { it.coordinate to t.stop } }, onStopClick = onStop, onVehicleClick = onVehicle,
                 onPlaceClick = onPlace, onError = { mapError = it; if (it != null) onMapFailed() })
         }
@@ -986,6 +986,7 @@ private fun SettingsSheet(settings: Settings, vm: TransportViewModel, onDismiss:
                     leadingContent = { RadioButton(selected = settings.themeMode == mode, onClick = null) },
                     modifier = Modifier.clickable(role = androidx.compose.ui.semantics.Role.RadioButton) { vm.themeMode(mode) })
             }
+            SettingSwitch(Icons.Outlined.Map, "Koyu temada koyu harita", "Varsayılan açık. Kapatırsan harita koyu temada da açık renkli kalır", settings.darkMap, vm::darkMap)
             Text("Çevrimdışı mod", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
             OfflineMode.entries.forEach { mode ->
                 ListItem(headlineContent = { Text(mode.title) }, supportingContent = { Text(mode.subtitle) },

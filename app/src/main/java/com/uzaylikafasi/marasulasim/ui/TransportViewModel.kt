@@ -88,6 +88,7 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     } ?: "model yok"
     fun offlineMode(mode: OfflineMode) = action { app.store.setOfflineMode(mode) }
     fun themeMode(mode: ThemeMode) = action { app.store.setThemeMode(mode) }
+    fun darkMap(on: Boolean) = action { app.store.setDarkMap(on) }
     /** Düğme: çevrimdışı tahmini aç/kapat (yalnız Düğme kipinde). Otomatik kipte açıklama gösterir. */
     fun toggleOffline() = action {
         val s = settings.value
