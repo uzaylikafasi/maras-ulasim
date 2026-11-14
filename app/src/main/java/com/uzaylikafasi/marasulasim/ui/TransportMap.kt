@@ -1,7 +1,13 @@
 package com.uzaylikafasi.marasulasim.ui
 
 import android.content.Context
+import androidx.compose.foundation.background
+import androidx.compose.foundation.layout.*
+import androidx.compose.material3.*
 import androidx.compose.runtime.*
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.dp
 import androidx.compose.material.icons.filled.*
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.platform.LocalContext
@@ -116,7 +122,7 @@ private fun arrowBitmap(): android.graphics.Bitmap {
 
 @Composable
 fun TransportMap(snapshots: List<LineSnapshot>, focus: Stop?, favoritePlates: Set<String>, showVehicles: Boolean, locate: Pair<Long, Coordinate>?, modifier: Modifier = Modifier,
-                 stopRangeMeters: Int = DEFAULT_STOP_RANGE_METERS, showAllStops: Boolean = true, dark: Boolean = false,
+                 stopRangeMeters: Int = DEFAULT_STOP_RANGE_METERS, showAllStops: Boolean = true, dark: Boolean = false, appDark: Boolean = false,
                  follow: Pair<Coordinate, Stop>? = null, onStopClick: (Stop) -> Unit, onVehicleClick: (Line, Vehicle) -> Unit, onPlaceClick: (String, Coordinate) -> Unit, onError: (String?) -> Unit) {
     val context = LocalContext.current
     val owner = LocalLifecycleOwner.current
@@ -131,10 +137,16 @@ fun TransportMap(snapshots: List<LineSnapshot>, focus: Stop?, favoritePlates: Se
     val vehicleClick by rememberUpdatedState(onVehicleClick)
     val placeClick by rememberUpdatedState(onPlaceClick)
     val reportError by rememberUpdatedState(onError)
+    var mapReady by remember(dark) { mutableStateOf(false) }
+    var mapFailed by remember(dark) { mutableStateOf(false) }
     // Tema değişince harita yeniden kurulur (açık/koyu stil farklı); kamera başlangıca döner.
     val holder = remember(dark) {
-        MapHolder(context, dark) { reportError(it) }.apply {
-            ready = { render(latest, plates, showVehicles = vehiclesOn) }
+        MapHolder(context, dark) {
+            mapFailed = it != null
+            if (it != null) mapReady = false
+            reportError(it)
+        }.apply {
+            ready = { render(latest, plates, showVehicles = vehiclesOn); mapReady = true }
             clicked = { stopClick(it) }
             vehicleClicked = { line, vehicle -> vehicleClick(line, vehicle) }
             placeClicked = { name, at -> placeClick(name, at) }
@@ -167,7 +179,18 @@ fun TransportMap(snapshots: List<LineSnapshot>, focus: Stop?, favoritePlates: Se
     val now = tick
     holder.showAllStops = showAllStops
     holder.stopRangeMeters = stopRangeMeters.toDouble()
-    AndroidView(factory = { holder.view }, modifier = modifier, update = { holder.render(snapshots, favoritePlates, now, showVehicles) })
+    holder.appDark = appDark
+    Box(modifier) {
+        AndroidView(factory = { holder.view }, modifier = Modifier.matchParentSize(), update = { holder.render(snapshots, favoritePlates, now, showVehicles) })
+        // Düğmeler MapScreen'de bu katmanın üstünde kalır; yer tutucu dokunma dinlemez.
+        if (!mapReady) Column(Modifier.matchParentSize().background(if (appDark) Color(0xFF121212) else Color(0xFFEEF1F4)),
+            horizontalAlignment = Alignment.CenterHorizontally, verticalArrangement = Arrangement.spacedBy(12.dp, Alignment.CenterVertically)) {
+            if (!mapFailed) {
+                CircularProgressIndicator(Modifier.size(24.dp), strokeWidth = 2.dp)
+                Text("Harita yükleniyor…", color = MaterialTheme.colorScheme.onSurface, style = MaterialTheme.typography.bodySmall)
+            }
+        }
+    }
 }
 
 private class MapHolder(private val context: Context, private val dark: Boolean, private val error: (String?) -> Unit) {
@@ -178,6 +201,7 @@ private class MapHolder(private val context: Context, private val dark: Boolean,
     private var map: MapLibreMap? = null
     private var pendingFocus: Stop? = null
     private var markedStop: Stop? = null
+    var appDark: Boolean = false
     var ready: (() -> Unit)? = null
     var clicked: ((Stop) -> Unit)? = null
     var vehicleClicked: ((Line, Vehicle) -> Unit)? = null
@@ -480,7 +504,7 @@ private class MapHolder(private val context: Context, private val dark: Boolean,
         val codes = snapshots.map { it.line.code }.distinct()
         snapshots.forEach { snapshot ->
             val key = snapshot.line.key.replace(':', '-')
-            val color = lineColorFor(snapshot.line.code, codes)
+            val color = lineColorFor(snapshot.line.code, codes, appDark)
             val stops = runCatching { snapshot.stops?.objectData?.requiredArray("lineStops")?.objects()?.map(::parseStop) }.getOrNull().orEmpty()
             val shape = runCatching { (snapshot.shape?.data as? JSONObject)?.let { renderedShape(it, stops) } }.getOrNull()
             // Çizgiyi yol ekseninde tut: kaydırma keskin köşelerde sivrilmelere yol açıyor.
@@ -555,13 +579,14 @@ private class MapHolder(private val context: Context, private val dark: Boolean,
                 style.addLayer(busLayer("vehicles-$key", 1f).withProperties(iconColor(color)))
                 style.addLayer(SymbolLayer("vehicle-label-$key", busSourceId).withProperties(textField(Expression.get("label")),
                     textSize(Expression.interpolate(Expression.linear(), Expression.zoom(), Expression.stop(11, 8.5f), Expression.stop(16, 11f))),
-                    textColor("#FFFFFF"), textFont(arrayOf("Noto Sans Bold")), textAllowOverlap(true), textIgnorePlacement(true)))
+                    textColor(lineTextColorFor(color)), textFont(arrayOf("Noto Sans Bold")), textAllowOverlap(true), textIgnorePlacement(true)))
                 // Yakınlaşınca gittiği yer: "→ BİNEVLER"
                 style.addLayer(SymbolLayer("vehicle-dir-$key", busSourceId).withProperties(textField(Expression.get("dest")),
                     textSize(11f), textColor(color), textHaloColor(haloColor), textHaloWidth(2f), textFont(arrayOf("Noto Sans Bold")),
                     textOffset(arrayOf(0f, 2.1f)), textAnchor(Property.TEXT_ANCHOR_TOP), textOptional(true), textMaxWidth(9f)).apply { minZoom = 13.5f })
             }
             style.getLayerAs<SymbolLayer>("vehicles-$key")?.setProperties(iconColor(color))
+            style.getLayerAs<SymbolLayer>("vehicle-label-$key")?.setProperties(textColor(lineTextColorFor(color)))
             style.getLayerAs<SymbolLayer>("vehicle-dir-$key")?.setProperties(textColor(color))
         }
         busTargets.keys.retainAll(keys.map { "vehicle-source-$it" }.toSet())

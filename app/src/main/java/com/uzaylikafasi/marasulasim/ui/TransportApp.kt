@@ -90,6 +90,7 @@ private fun SystemBarsEffect(dark: Boolean) {
     }
 }
 private fun hex(value: String) = Color(android.graphics.Color.parseColor(value))
+private fun badgeContentColor(color: Color) = if (color.luminance() > 0.179f) Color.Black else Color.White
 private val mapCardShape = RoundedCornerShape(24.dp)
 private val stopSaver = Saver<Stop?, String>(save = { it?.json()?.toString() ?: "" }, restore = {
     if (it.isBlank()) null else runCatching { parseStop(JSONObject(it)) }.getOrNull()
@@ -400,11 +401,12 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
     // Otobüs izlenirken haritada yalnız o otobüs kalır; öteki hatlar izleme bitince geri gelir
     val snapshots = tracked?.let { listOf(it.snapshot()) } ?: allSnapshots
     val trackedBus = tracked?.vehicle()
+    val mapCodes = snapshots.map { it.line.code }.distinct()
     BackHandler(enabled = tracked != null) { onStopTracking() }
     Box(Modifier.fillMaxSize()) {
         key(mapAttempt) {
             TransportMap(snapshots, focus, settings.plates, tracked != null || settings.showVehicles, locate, Modifier.fillMaxSize(),
-                stopRangeMeters = settings.stopRangeMeters, showAllStops = settings.showAllStops, dark = LocalDark.current && settings.darkMap,
+                stopRangeMeters = settings.stopRangeMeters, showAllStops = settings.showAllStops, dark = LocalDark.current && settings.darkMap, appDark = LocalDark.current,
                 follow = tracked?.let { t -> trackedBus?.let { it.coordinate to t.stop } }, onStopClick = onStop, onVehicleClick = onVehicle,
                 onPlaceClick = onPlace, onError = { mapError = it; if (it != null) onMapFailed() })
         }
@@ -424,7 +426,8 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
             tracked?.let { t ->
                 Surface(modifier = Modifier.widthIn(max = 420.dp), shape = mapCardShape, color = MaterialTheme.colorScheme.surface, shadowElevation = 4.dp) {
                     Row(Modifier.padding(start = 10.dp, end = 2.dp, top = 2.dp, bottom = 2.dp), verticalAlignment = Alignment.CenterVertically) {
-                        Surface(color = hex(badgeColorFor(t.line.code)), contentColor = Color.White, shape = RoundedCornerShape(10.dp)) {
+                        val badgeColor = hex(lineColorFor(t.line.code, mapCodes, LocalDark.current))
+                        Surface(color = badgeColor, contentColor = badgeContentColor(badgeColor), shape = RoundedCornerShape(10.dp)) {
                             Text(t.line.code, Modifier.padding(horizontal = 6.dp, vertical = 3.dp), style = MaterialTheme.typography.labelLarge, fontWeight = FontWeight.Bold)
                         }
                         Column(Modifier.weight(1f).padding(start = 10.dp)) {
@@ -444,14 +447,14 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
                 items(groups.keys.toList(), key = { it }) { code ->
                     val line = groups.getValue(code).first()
                     val on = settings.isOnMap(code)
-                    val color = if (on) hex(lineColorFor(code, settings.visibleCodes())) else Color(0xFF94A3B8)
+                    val color = if (on) hex(lineColorFor(code, mapCodes, LocalDark.current)) else Color(0xFF94A3B8)
                     Surface(onClick = { onSelect(line) }, shape = RoundedCornerShape(50), color = if (on) color else MaterialTheme.colorScheme.surface, shadowElevation = 4.dp,
                         modifier = Modifier.animateItem()) {
                         Row(Modifier.padding(start = 14.dp, end = 4.dp), verticalAlignment = Alignment.CenterVertically) {
-                            Icon(Icons.Outlined.DirectionsBus, null, Modifier.size(16.dp), tint = if (on) Color.White else color)
-                            Text(code, Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold, color = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+                            Icon(Icons.Outlined.DirectionsBus, null, Modifier.size(16.dp), tint = if (on) badgeContentColor(color) else color)
+                            Text(code, Modifier.padding(start = 6.dp), fontWeight = FontWeight.Bold, color = if (on) badgeContentColor(color) else MaterialTheme.colorScheme.onSurfaceVariant)
                             IconButton(onClick = { onRemove(line) }, modifier = Modifier.size(36.dp)) {
-                                Icon(Icons.Outlined.Close, "$code hattını haritadan kaldır", Modifier.size(16.dp), tint = if (on) Color.White else MaterialTheme.colorScheme.onSurfaceVariant)
+                                Icon(Icons.Outlined.Close, "$code hattını haritadan kaldır", Modifier.size(16.dp), tint = if (on) badgeContentColor(color) else MaterialTheme.colorScheme.onSurfaceVariant)
                             }
                         }
                     }
@@ -499,14 +502,14 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
                             val counts = snapshots.filter { it.line.code == code }.map { snap -> runCatching { snap.vehicles?.takeUnless { it.isOld() }?.arrayData?.length() }.getOrNull() }
                             val total = counts.filterNotNull().takeIf { it.isNotEmpty() }?.sum()
                             SmallBadge("$code${if (settings.showVehicles && total != null) " · $total araç" else ""}",
-                                Color(android.graphics.Color.parseColor(lineColorFor(code, codes))))
+                                Color(android.graphics.Color.parseColor(lineColorFor(code, codes, LocalDark.current))))
                         }
                     }
                     Icon(if (expanded) Icons.Outlined.ExpandMore else Icons.Outlined.ExpandLess, if (expanded) "Özeti küçült" else "Ayrıntıları aç")
                 }
                 if (expanded) snapshots.forEach { snapshot ->
                     Row(Modifier.fillMaxWidth().clickable { onLine(snapshot.line) }, verticalAlignment = Alignment.CenterVertically) {
-                        CodeBadge(snapshot.line.code, Color(android.graphics.Color.parseColor(lineColorFor(snapshot.line.code, snapshots.map { it.line.code }.distinct()))))
+                        CodeBadge(snapshot.line.code, Color(android.graphics.Color.parseColor(lineColorFor(snapshot.line.code, mapCodes, LocalDark.current))))
                         Column(Modifier.weight(1f).padding(start = 12.dp)) {
                             Text("${snapshot.line.directionName} · ${if (snapshot.line.direction == 1) "düz çizgi" else "kesikli çizgi"}", fontWeight = FontWeight.Medium)
                             val live = snapshot.vehicles
@@ -565,7 +568,8 @@ private fun QuickAction(icon: ImageVector, label: String, modifier: Modifier = M
 
 @Composable
 private fun LineBadgeButton(code: String, favorite: Boolean = false, onLongClick: (() -> Unit)? = null, onClick: () -> Unit) {
-    Surface(shape = RoundedCornerShape(10.dp), color = hex(badgeColorFor(code)), contentColor = Color.White,
+    val color = hex(badgeColorFor(code, LocalDark.current))
+    Surface(shape = RoundedCornerShape(10.dp), color = color, contentColor = badgeContentColor(color),
         modifier = Modifier.clip(RoundedCornerShape(10.dp)).combinedClickable(onClick = onClick, onLongClick = onLongClick, onLongClickLabel = "$code favori")) {
         Row(Modifier.padding(horizontal = 12.dp, vertical = 8.dp), verticalAlignment = Alignment.CenterVertically) {
             if (favorite) Icon(Icons.Filled.Star, "Favori", Modifier.size(14.dp).padding(end = 2.dp))
@@ -580,7 +584,8 @@ private fun ArrivalCard(arrival: Arrival, stopsBetween: Int? = null, lightsAhead
     Surface(shape = RoundedCornerShape(18.dp), color = MaterialTheme.colorScheme.surfaceVariant,
         modifier = Modifier.fillMaxWidth().then(if (onClick != null) Modifier.clip(RoundedCornerShape(18.dp)).clickable(onClickLabel = "Otobüs bilgileri", onClick = onClick) else Modifier)) {
         Row(Modifier.padding(12.dp), verticalAlignment = Alignment.CenterVertically) {
-            Surface(shape = RoundedCornerShape(12.dp), color = hex(badgeColorFor(arrival.code)), contentColor = Color.White) {
+            val badgeColor = hex(badgeColorFor(arrival.code, LocalDark.current))
+            Surface(shape = RoundedCornerShape(12.dp), color = badgeColor, contentColor = badgeContentColor(badgeColor)) {
                 Column(Modifier.padding(horizontal = 10.dp, vertical = 8.dp), horizontalAlignment = Alignment.CenterHorizontally) {
                     Icon(Icons.Outlined.DirectionsBus, null, Modifier.size(16.dp))
                     Text(arrival.code, fontWeight = FontWeight.Bold, style = MaterialTheme.typography.labelLarge)
@@ -635,7 +640,7 @@ private fun NearbyStopCard(stop: Stop, meters: Int?, lines: List<String>, favori
                     meters?.let { "yürüyerek ${(it / 80).coerceAtLeast(1)} dk" }, "durak ${stop.code}").joinToString(" · "),
                     style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.secondary)
                 if (lines.isNotEmpty()) FlowRow(horizontalArrangement = Arrangement.spacedBy(4.dp), verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                    lines.take(8).forEach { SmallBadge(it, hex(badgeColorFor(it))) }
+                    lines.take(8).forEach { SmallBadge(it, hex(badgeColorFor(it, LocalDark.current))) }
                     if (lines.size > 8) Text("+${lines.size - 8}", style = MaterialTheme.typography.labelMedium)
                 }
                 Text("Yaklaşan otobüsler için dokun", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.primary)
@@ -658,7 +663,7 @@ private fun SheetHeader(title: String, subtitle: String, onClose: () -> Unit) {
 
 @Composable
 private fun SmallBadge(text: String, color: Color) {
-    Surface(color = color, contentColor = Color.White, shape = RoundedCornerShape(8.dp)) {
+    Surface(color = color, contentColor = badgeContentColor(color), shape = RoundedCornerShape(8.dp)) {
         Text(text, Modifier.padding(horizontal = 8.dp, vertical = 4.dp), style = MaterialTheme.typography.labelMedium, fontWeight = FontWeight.Bold)
     }
 }
@@ -717,7 +722,7 @@ private fun FavoritesScreen(s: Settings, onFavoriteLine: (Line) -> Unit, onFavor
                 FlowRow(horizontalArrangement = Arrangement.spacedBy(10.dp), verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     lineGroups.forEach { (code, directions) ->
                         val on = s.isOnMap(code)
-                        val color = Color(android.graphics.Color.parseColor(lineColorFor(code, s.visibleCodes().ifEmpty { lineGroups.keys.toList() })))
+                        val color = Color(android.graphics.Color.parseColor(lineColorFor(code, s.visibleCodes().ifEmpty { lineGroups.keys.toList() }, LocalDark.current)))
                         ElevatedCard(onClick = { onLine(directions.first()) }, modifier = Modifier.widthIn(min = 160.dp, max = 260.dp)) {
                             Column(Modifier.padding(12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
                                 Row(verticalAlignment = Alignment.CenterVertically) {
@@ -812,7 +817,7 @@ private fun StopRow(stop: Stop, favorite: Boolean, onClick: () -> Unit, onFavori
 private fun CodeBadge(code: String, color: Color = Color.Unspecified) {
     val themed = color == Color.Unspecified
     Surface(color = if (themed) MaterialTheme.colorScheme.primary else color,
-        contentColor = if (themed) MaterialTheme.colorScheme.onPrimary else Color.White, shape = RoundedCornerShape(10.dp)) {
+        contentColor = if (themed) MaterialTheme.colorScheme.onPrimary else badgeContentColor(color), shape = RoundedCornerShape(10.dp)) {
         Text(code, Modifier.padding(horizontal = 10.dp, vertical = 10.dp), fontWeight = FontWeight.Bold)
     }
 }

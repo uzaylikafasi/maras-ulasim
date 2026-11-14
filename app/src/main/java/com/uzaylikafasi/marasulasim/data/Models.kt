@@ -183,9 +183,27 @@ fun shapeBounds(o: JSONObject): Pair<Coordinate, Coordinate>? = runCatching {
 
 /** Haritada hat rengi koda göre: aynı hattın gidiş ve dönüşü aynı renkte. */
 val lineColors = listOf("#2563EB", "#EA580C", "#9333EA", "#DB2777", "#16A34A", "#0891B2")
+val darkLineColors = listOf("#FFC107", "#FF7043", "#CE93D8", "#F06292", "#81C784", "#BCAAA4")
 /** Haritadan bağımsız sabit hat rengi (rozetler için): aynı kod her ekranda aynı renkte. */
-fun badgeColorFor(code: String): String = lineColors[Math.floorMod(code.hashCode(), lineColors.size)]
-fun lineColorFor(code: String, codes: List<String>): String = lineColors[(codes.indexOf(code).coerceAtLeast(0)) % lineColors.size]
+fun badgeColorFor(code: String, dark: Boolean = false): String {
+    val colors = if (dark) darkLineColors else lineColors
+    return colors[Math.floorMod(code.hashCode(), colors.size)]
+}
+fun lineColorFor(code: String, codes: List<String>, dark: Boolean = false): String {
+    val colors = if (dark) darkLineColors else lineColors
+    return colors[(codes.indexOf(code).coerceAtLeast(0)) % colors.size]
+}
+
+/** Siyah ve beyaz arasından daha yüksek kontrast sağlayan yazı rengi (sRGB). */
+fun lineTextColorFor(color: String): String {
+    val rgb = color.removePrefix("#").toInt(16)
+    fun linear(shift: Int): Double {
+        val channel = ((rgb shr shift) and 255) / 255.0
+        return if (channel <= 0.04045) channel / 12.92 else Math.pow((channel + 0.055) / 1.055, 2.4)
+    }
+    val luminance = 0.2126 * linear(16) + 0.7152 * linear(8) + 0.0722 * linear(0)
+    return if (luminance > 0.179) "#000000" else "#FFFFFF"
+}
 
 /** Haritada açık olan hat kodları (sırasıyla). */
 fun Settings.visibleCodes(): List<String> = mapLines.filter { it.key in selected }.map { it.code }.distinct()
