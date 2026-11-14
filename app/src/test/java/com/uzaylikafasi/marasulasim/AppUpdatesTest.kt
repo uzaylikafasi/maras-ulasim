@@ -25,6 +25,13 @@ class AppUpdatesTest {
         assertNull(parseRelease(fixture().put("prerelease",true),"1.0.1",emptyList(),null))
         assertNull(parseRelease(fixture().put("draft",true),"1.0.1",emptyList(),null))
     }
+    @Test fun forcedCheckIgnoresSkippedVersionButStillRequiresNewerValidRelease() {
+        assertNotNull(parseRelease(fixture(),"1.0.1",listOf("arm64-v8a"),"1.1.0",force=true))
+        assertNull(parseRelease(fixture(),"1.1.0",listOf("arm64-v8a"),"1.1.0",force=true))
+        assertNull(parseRelease(fixture().put("prerelease",true),"1.0.1",emptyList(),"1.1.0",force=true))
+        val bad=fixture(); bad.getJSONArray("assets").getJSONObject(0).put("browser_download_url","https://example.org/evil.apk")
+        assertNull(parseRelease(bad,"1.0.1",listOf("arm64-v8a"),"1.1.0",force=true))
+    }
     @Test fun rejectsUnexpectedUrlsAndMissingOrOversizedApks() {
         val bad=fixture(); bad.getJSONArray("assets").getJSONObject(0).put("browser_download_url","https://example.org/evil.apk")
         assertNull(parseRelease(bad,"1.0.1",listOf("arm64-v8a"),null))
@@ -32,7 +39,8 @@ class AppUpdatesTest {
         val large=fixture();large.getJSONArray("assets").getJSONObject(0).put("size",100_000_001L)
         assertNull(parseRelease(large,"1.0.1",listOf("arm64-v8a"),null))
     }
-    @Test fun dailyGateIncludesOfflineAttemptsAndClockRollback() {
+    @Test fun sixHourGateIncludesBoundaryAndClockRollback() {
+        assertEquals(21_600_000L,UPDATE_CHECK_INTERVAL_MS)
         assertTrue(updateCheckDue(0,100))
         assertFalse(updateCheckDue(100,100+UPDATE_CHECK_INTERVAL_MS-1))
         assertTrue(updateCheckDue(100,100+UPDATE_CHECK_INTERVAL_MS))

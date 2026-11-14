@@ -7,6 +7,7 @@ import android.os.Build
 import androidx.core.content.FileProvider
 import androidx.lifecycle.viewModelScope
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -19,7 +20,7 @@ import java.util.concurrent.TimeUnit
 
 private const val RELEASE_API = "https://api.github.com/repos/uzaylikafasi/maras-ulasim/releases/latest"
 private const val DOWNLOAD_PREFIX = "https://github.com/uzaylikafasi/maras-ulasim/releases/download/"
-const val UPDATE_CHECK_INTERVAL_MS = 86_400_000L
+const val UPDATE_CHECK_INTERVAL_MS = 21_600_000L
 
 data class AppRelease(val version: String, val notes: String, val url: String, val size: Long, val digest: String?)
 fun versionParts(raw: String): List<Int>? = Regex("v?(\\d+)\\.(\\d+)\\.(\\d+)").matchEntire(raw.removeSuffix("-dev"))
@@ -30,10 +31,17 @@ fun newerVersion(candidate: String, installed: String): Boolean {
     return false
 }
 fun updateCheckDue(last: Long, now: Long) = last==0L || now<last || now-last>=UPDATE_CHECK_INTERVAL_MS
-fun parseRelease(o: JSONObject, installed: String, abis: List<String>, skipped: String?): AppRelease? {
+sealed class UpdateCheckResult {
+    data class Available(val release: AppRelease) : UpdateCheckResult()
+    object UpToDate : UpdateCheckResult()
+    object Failed : UpdateCheckResult()
+    object NotChecked : UpdateCheckResult()
+}
+
+fun parseRelease(o: JSONObject, installed: String, abis: List<String>, skipped: String?, force: Boolean = false): AppRelease? {
     if(o.optBoolean("draft") || o.optBoolean("prerelease")) return null
     val tag = o.optString("tag_name"); val version = tag.removePrefix("v")
-    if(!newerVersion(version,installed) || version==skipped) return null
+    if(!newerVersion(version,installed) || (!force && version==skipped)) return null
     val assets = o.optJSONArray("assets") ?: return null
     val preferred = if("arm64-v8a" in abis) "maras-ulasim-v$version-arm64.apk" else "maras-ulasim-v$version.apk"
     val all = (0 until assets.length()).map { assets.getJSONObject(it) }
@@ -54,32 +62,46 @@ class AppUpdates(private val context: Context) {
             require(url.isHttps && (url.host in setOf("api.github.com","github.com","release-assets.githubusercontent.com","objects.githubusercontent.com")))
             chain.proceed(chain.request())
         }.build()
-    private companion object { val checkLock = Any() }
-    private fun claimCheck(now: Long): Boolean = synchronized(checkLock) {
-        if(!updateCheckDue(prefs.getLong("last",0),now)) false
-        else prefs.edit().putLong("last",now).commit()
-    }
-    suspend fun check(now: Long = System.currentTimeMillis()): AppRelease? = withContext(Dispatchers.IO) {
-        if(!claimCheck(now)) return@withContext null
-        runCatching {
+    private companion object { val checkLock = Mutex() }
+    suspend fun check(now: Long = System.currentTimeMillis(), force: Boolean = false): UpdateCheckResult = withContext(Dispatchers.IO) {
+        if(!checkLock.tryLock()) return@withContext UpdateCheckResult.NotChecked
+        try {
+            if(!force && !updateCheckDue(prefs.getLong("last",0),now)) return@withContext UpdateCheckResult.NotChecked
             client.newCall(Request.Builder().url(RELEASE_API).header("Accept","application/vnd.github+json").build()).execute().use { r ->
-                if(!r.isSuccessful) null else {
-                    val body = r.body ?: return@use null
-                    if(body.contentLength()>1_000_000) return@use null
-                    val output = java.io.ByteArrayOutputStream()
-                    body.byteStream().use { input ->
-                        val buffer=ByteArray(8192)
-                        while(output.size()<=1_000_000) {
-                            val count=input.read(buffer)
-                            if(count<0) break
-                            output.write(buffer,0,count)
-                        }
+                check(r.isSuccessful)
+                val body = r.body ?: error("Yanıt alınamadı.")
+                check(body.contentLength()<=1_000_000)
+                val output = java.io.ByteArrayOutputStream()
+                body.byteStream().use { input ->
+                    val buffer=ByteArray(8192)
+                    while(output.size()<=1_000_000) {
+                        kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                        val count=input.read(buffer)
+                        if(count<0) break
+                        output.write(buffer,0,count)
                     }
-                    val raw = output.toByteArray()
-                    if(raw.size>1_000_000) null else parseRelease(JSONObject(String(raw,Charsets.UTF_8)),BuildConfig.VERSION_NAME,Build.SUPPORTED_ABIS.toList(),prefs.getString("skipped",null))
                 }
+                val raw = output.toByteArray()
+                check(raw.size<=1_000_000)
+                val json = JSONObject(String(raw,Charsets.UTF_8))
+                val version = json.getString("tag_name").removePrefix("v")
+                check(versionParts(version)!=null)
+                val skipped = prefs.getString("skipped",null)
+                val release = parseRelease(json,BuildConfig.VERSION_NAME,Build.SUPPORTED_ABIS.toList(),skipped,force)
+                // Yeni sürümün APK bilgileri geçersizse bunu "güncel" sayma.
+                if(newerVersion(version,BuildConfig.VERSION_NAME) && (force || version!=skipped) &&
+                    !json.optBoolean("draft") && !json.optBoolean("prerelease")) check(release!=null)
+                kotlinx.coroutines.currentCoroutineContext().ensureActive()
+                prefs.edit().putLong("last",now).commit()
+                if(release!=null) UpdateCheckResult.Available(release) else UpdateCheckResult.UpToDate
             }
-        }.getOrNull()
+        } catch(e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch(e: Exception) {
+            UpdateCheckResult.Failed
+        } finally {
+            checkLock.unlock()
+        }
     }
     fun skip(version: String) { prefs.edit().putString("skipped",version).apply() }
     suspend fun download(release: AppRelease): File = withContext(Dispatchers.IO) {
@@ -137,11 +159,29 @@ class AppUpdates(private val context: Context) {
 class UpdateViewModel(application: android.app.Application) : androidx.lifecycle.AndroidViewModel(application) {
     val updates = AppUpdates(application)
     val state = kotlinx.coroutines.flow.MutableStateFlow(UpdateState())
-    init { viewModelScope.launch { state.value = state.value.copy(release = updates.check()) } }
+    fun checkAutomatically() = checkForUpdates(force=false)
+    fun checkNow() = checkForUpdates(force=true)
+    private fun checkForUpdates(force: Boolean) {
+        if(state.value.checking || state.value.downloading || state.value.release!=null) return
+        state.value = state.value.copy(checking=true,message=null)
+        viewModelScope.launch {
+            try {
+                when(val result = updates.check(force=force)) {
+                    is UpdateCheckResult.Available -> state.value = state.value.copy(release=result.release,
+                        message=if(force) "Yeni sürüm: ${result.release.version}." else null)
+                    UpdateCheckResult.UpToDate -> if(force) state.value = state.value.copy(message="Uygulama güncel (${BuildConfig.VERSION_NAME}).")
+                    UpdateCheckResult.Failed -> if(force) state.value = state.value.copy(message="Güncelleme kontrol edilemedi. Bağlantını kontrol et.")
+                    UpdateCheckResult.NotChecked -> if(force) state.value = state.value.copy(message="Güncelleme kontrolü sürüyor. Biraz sonra tekrar dene.")
+                }
+            } finally {
+                state.value = state.value.copy(checking=false)
+            }
+        }
+    }
     fun dismiss(skip: Boolean = false) {
         if(state.value.downloading) return
         if(skip) state.value.release?.let { updates.skip(it.version) }
-        state.value = UpdateState()
+        state.value = state.value.copy(release=null,file=null,error=null)
     }
     fun download() {
         val release = state.value.release ?: return
@@ -160,4 +200,4 @@ class UpdateViewModel(application: android.app.Application) : androidx.lifecycle
     }
     fun error(message: String) { state.value=state.value.copy(error=message) }
 }
-data class UpdateState(val release: AppRelease? = null, val file: File? = null, val downloading: Boolean = false, val error: String? = null)
+data class UpdateState(val release: AppRelease? = null, val file: File? = null, val downloading: Boolean = false, val error: String? = null, val checking: Boolean = false, val message: String? = null)

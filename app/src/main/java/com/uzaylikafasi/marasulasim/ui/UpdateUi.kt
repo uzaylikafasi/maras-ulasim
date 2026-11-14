@@ -34,6 +34,7 @@ fun UpdatePrompt() {
             error?.let { Text(it,color=MaterialTheme.colorScheme.error) }
             if(downloading) { LinearProgressIndicator(Modifier.fillMaxWidth()); Text("İndiriliyor…") }
             if(file!=null) Text("İndirme ve imza kontrolü tamamlandı. Kur'a dokun.")
+            Text("Sonra veya atla dersen Diğer > Ayarlar > Güncellemeyi kontrol et ile sonradan güncelleyebilirsin.")
             Text(item.notes.ifBlank { "Yeni sürüm yayımlandı." })
             Text("APK bu cihaz için seçilir. İndirdikten sonra Kur'a dokun; Android yükleyicisinde kurulumu onaylayabilirsin. Uygulama seçimi çıkarsa Paket yükleyici'yi seç.")
         }

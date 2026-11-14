@@ -71,6 +71,10 @@ class MainActivity : ComponentActivity() {
             }, showTracking=showTracking,onTrackingHandled={ showTracking=false })
         }
     }
+    override fun onResume() {
+        super.onResume()
+        androidx.lifecycle.ViewModelProvider(this)[UpdateViewModel::class.java].checkAutomatically()
+    }
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent); setIntent(intent)
         showTracking=intent.getBooleanExtra("show_tracking",false)

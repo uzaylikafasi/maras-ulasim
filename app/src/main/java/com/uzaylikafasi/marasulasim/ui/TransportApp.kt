@@ -155,7 +155,6 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                 Text(if (tab == 0) "Maraş Ulaşım" else names[tab], fontWeight = FontWeight.SemiBold)
                 if (tab == 0) Text("Hatların, tek haritada", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.secondary)
             } }, actions = {
-                if (tab == 0) IconButton(onClick = { vm.refresh() }) { Icon(Icons.Outlined.Refresh, "Haritayı yenile") }
                 OfflineModeButton(offlineButton, vm::toggleOffline, Modifier.padding(end = 4.dp))
             })
         }, bottomBar = {
@@ -169,7 +168,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                     0 -> MapScreen(settings, snapshots.values.toList(), focusedStop, openStop, tracked, vm::stopTracking,
                         onTrackedInfo = { t -> openedArrival=t.stop to Arrival(t.line.code,t.plate,"Süre belirtilmedi",t.vehicle()?.nextStop.orEmpty(),name=t.line.name,direction=t.line.directionName,lineId=t.line.id.toString()) },
                         onSearch = { tab = 1 }, onLine = { openedLine = it }, onSelect = vm::select, onRemove = vm::removeFromMap,
-                        onVehicle = { line, vehicle -> openedVehicle = line to vehicle }, onShowVehicles = vm::showVehicles, onRefresh = vm::refresh,
+                        onVehicle = { line, vehicle -> openedVehicle = line to vehicle }, onShowVehicles = vm::showVehicles,
                         offline = offlineButton, onOffline = vm::toggleOffline, onMapFailed = vm::mapLoadFailed,
                         onNearby = { nearbyTitle = null; sheet = "nearby"; vm.prepareNearby(); onNearby() }, onLocate = onLocate,
                         onPlace = { name, at -> nearbyTitle = name; sheet = "nearby"; vm.nearby(at.latitude, at.longitude) })
@@ -391,7 +390,7 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
 @Composable
 private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focus: Stop?, onStop: (Stop) -> Unit, tracked: TrackedBus?, onStopTracking: () -> Unit, onTrackedInfo: (TrackedBus) -> Unit,
                       onSearch: () -> Unit, onLine: (Line) -> Unit, onSelect: (Line) -> Unit, onRemove: (Line) -> Unit,
-                      onVehicle: (Line, Vehicle) -> Unit, onShowVehicles: (Boolean) -> Unit, onRefresh: () -> Unit,
+                      onVehicle: (Line, Vehicle) -> Unit, onShowVehicles: (Boolean) -> Unit,
                       onNearby: () -> Unit, onLocate: ((Double, Double) -> Unit) -> Unit, onPlace: (String, Coordinate) -> Unit,
                       offline: OfflineButtonState = OfflineButtonState(false, false, false, false), onOffline: () -> Unit = {}, onMapFailed: () -> Unit = {}) {
     var locate by remember { mutableStateOf<Pair<Long, Coordinate>?>(null) }
@@ -420,7 +419,6 @@ private fun MapScreen(settings: Settings, allSnapshots: List<LineSnapshot>, focu
                 }
                 if(tracked==null) MapRoundButton(if (settings.showVehicles) Icons.Outlined.DirectionsBus else Icons.Outlined.BusAlert,
                     if (settings.showVehicles) "Otobüsleri gizle" else "Otobüsleri göster", active = settings.showVehicles) { onShowVehicles(!settings.showVehicles) }
-                if(tracked==null) MapRoundButton(Icons.Outlined.Refresh, "Haritayı yenile") { onRefresh() }
                 OfflineModeButton(offline, onOffline)
             }
             tracked?.let { t ->
@@ -992,6 +990,8 @@ private fun MoreScreen(onSheet: (String) -> Unit) {
 /** Özellik anahtarları; Diğer > Ayarlar. Seçimler cihazda saklanır. */
 @Composable
 private fun SettingsSheet(settings: Settings, vm: TransportViewModel, onDismiss: () -> Unit) {
+    val updateVm: UpdateViewModel = androidx.lifecycle.viewmodel.compose.viewModel()
+    val updateState by updateVm.state.collectAsState()
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)) {
         Column(Modifier.padding(horizontal = 20.dp).padding(bottom = 24.dp).verticalScroll(rememberScrollState()), verticalArrangement = Arrangement.spacedBy(4.dp)) {
             Text("Ayarlar", style = MaterialTheme.typography.titleLarge)
@@ -1023,6 +1023,19 @@ private fun SettingsSheet(settings: Settings, vm: TransportViewModel, onDismiss:
             StopRangeSetting(settings.stopRangeMeters, settings.showAllStops, vm::stopRangeMeters, vm::showAllStops)
             Text("Durak", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
             SettingSwitch(Icons.Outlined.StarOutline, "Sadece favorilerim", "Durakta yalnız favori hatların otobüsleri", settings.favoritesOnly, vm::favoritesOnly)
+            Text("Uygulama güncellemesi", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.padding(top = 8.dp))
+            ListItem(headlineContent = { Text("Kurulu sürüm") },
+                supportingContent = { Text(BuildConfig.VERSION_NAME) }, leadingContent = { Icon(Icons.Outlined.Info, null) })
+            OutlinedButton(onClick = updateVm::checkNow, enabled = !updateState.checking,
+                modifier = Modifier.padding(horizontal = 16.dp)) {
+                if(updateState.checking) {
+                    CircularProgressIndicator(Modifier.size(18.dp), strokeWidth = 2.dp)
+                    Spacer(Modifier.width(8.dp))
+                }
+                Text("Güncellemeyi kontrol et")
+            }
+            updateState.message?.let { Text(it, style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant, modifier = Modifier.padding(horizontal = 16.dp)) }
         }
     }
 }
