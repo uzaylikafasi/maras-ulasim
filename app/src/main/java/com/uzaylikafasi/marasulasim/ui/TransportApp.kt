@@ -217,13 +217,18 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                         QuickAction(Icons.Outlined.TripOrigin, "Buradan", Modifier.weight(1f)) { origin = stop; vm.clearJourney(); tab = 2; openedStop = null }
                         QuickAction(Icons.Outlined.Flag, "Buraya", Modifier.weight(1f)) { destination = stop; vm.clearJourney(); tab = 2; openedStop = null }
                     }
+                    var linesOpen by rememberSaveable(stop.id) { mutableStateOf(false) }
+                    var showAllArrivals by rememberSaveable(stop.id) { mutableStateOf(false) }
                     stopLines[stop.id]?.let { codes ->
-                        Text("Bu durağa uğrayan hatlar", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold)
-                        FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Row(Modifier.fillMaxWidth().clickable { linesOpen = !linesOpen }, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Bu durağa uğrayan hatlar · ${codes.size}", style = MaterialTheme.typography.titleSmall, fontWeight = FontWeight.SemiBold, modifier = Modifier.weight(1f))
+                            Icon(if (linesOpen) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, if (linesOpen) "Hatları gizle" else "Hatları göster")
+                        }
+                        if (linesOpen) FlowRow(horizontalArrangement = Arrangement.spacedBy(6.dp), verticalArrangement = Arrangement.spacedBy(6.dp)) {
                             codes.forEach { code -> LineBadgeButton(code, code in settings.favoriteCodes, onLongClick = { vm.favoriteCode(code) }) {
                                 query = code; vm.search(code); tab = 1; openedStop = null; vm.clearDetail() } }
                         }
-                        Text("Hat numarasına basılı tutarak favorilere ekleyebilirsin.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
+                        if (linesOpen) Text("Hat numarasına basılı tutarak favorilere ekleyebilirsin.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         Text("Yaklaşan otobüsler", style = MaterialTheme.typography.titleMedium, fontWeight = FontWeight.Bold, modifier = Modifier.weight(1f))
@@ -264,10 +269,16 @@ fun TransportApp(vm: TransportViewModel, onNearby: () -> Unit, onLocate: ((Doubl
                             Triple(arrival, between, vm.lightLearner.lightsAlong(path))
                         // Paylar eklenince sıra değişebilir: en erken gelen üstte
                         }.sortedBy { (a, between, lights) -> secondsOf(a)?.let { it + padSeconds(between, settings.stopPad, lights, settings.lightPad) } ?: Int.MAX_VALUE }
-                        rows.forEachIndexed { index, (arrival, between, lights) -> AnimatedListItem(index) {
+                        // Kalabalık duraklarda ilk 3 otobüs; gerisi "Tümünü göster" ile açılır
+                        val shown = if (showAllArrivals) rows else rows.take(3)
+                        shown.forEachIndexed { index, (arrival, between, lights) -> AnimatedListItem(index) {
                             ArrivalCard(arrival, between, lights, vm.lightLearner.waitingAtLight(arrival.plate, now), settings,
                                 { if (settings.trackOnTap && arrival.plate.isNotBlank()) track?.invoke(arrival) else openedArrival = stop to arrival })
                         } }
+                        if (rows.size > 3) TextButton(onClick = { showAllArrivals = !showAllArrivals }, modifier = Modifier.fillMaxWidth()) {
+                            Text(if (showAllArrivals) "Daha az göster" else "Tümünü göster · ${rows.size} otobüs")
+                            Icon(if (showAllArrivals) Icons.Outlined.ExpandLess else Icons.Outlined.ExpandMore, null, Modifier.padding(start = 4.dp))
+                        }
                         Freshness(result)
                         if (arrivals.isNotEmpty()) Text(if (settings.trackOnTap) "Süreler kaynağın tahminidir. Otobüse dokun, haritada izle." else "Süreler kaynağın tahminidir.", style = MaterialTheme.typography.labelSmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
                     }

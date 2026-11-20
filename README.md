@@ -5,82 +5,94 @@
 <h1 align="center">Maraş Ulaşım</h1>
 
 <p align="center">
-  Kahramanmaraş otobüsleri için Android uygulaması.<br>
-  Hatları haritada canlı izle, durağa yaklaşan otobüsleri gör, favorilerini kaydet.<br>
-  İnternet zayıfken ya da yokken çevrimdışı tahminle yola devam et; koyu temayı kullan.
+  Kahramanmaraş otobüslerini haritada canlı izle, durağa yaklaşan otobüsleri gör.<br>
+  İnternet zayıfken çevrimdışı tahminle devam et.
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/badge/s%C3%BCr%C3%BCm-1.2.0-2563EB" alt="Sürüm 1.2.0">
+  <a href="https://github.com/uzaylikafasi/maras-ulasim/releases/latest">
+    <img src="https://img.shields.io/badge/APK_indir-son_s%C3%BCr%C3%BCm-2563EB?style=for-the-badge" alt="Son sürümün APK dosyasını indir">
+  </a>
+</p>
+
+<p align="center">
+  <img src="https://img.shields.io/github/v/release/uzaylikafasi/maras-ulasim?color=2563EB&label=s%C3%BCr%C3%BCm" alt="Son sürüm">
   <img src="https://img.shields.io/badge/Android-8.0%2B-2563EB" alt="Android 8.0 ve üzeri">
   <a href="LICENSE"><img src="https://img.shields.io/badge/lisans-MIT-2563EB" alt="MIT lisansı"></a>
 </p>
 
-<p align="center">
-  <a href="https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.2.0">
-    <img src="https://img.shields.io/badge/APK_indir-1.2.0-2563EB?style=for-the-badge" alt="APK indir — sürüm 1.2.0">
-  </a>
-</p>
-
-> **Bağımsız bir uygulamadır. Belediye veya Kahramankart'ın resmî uygulaması değildir.** Veriler kaynağın verdiği gibidir; varış süreleri tahmindir.
-
-## Ekran görüntüleri
+> [!IMPORTANT]
+> Bağımsız bir uygulamadır; belediye veya Kahramankart'ın resmî uygulaması değildir. Varış süreleri kaynağın tahminidir.
 
 <table>
   <tr>
-    <td align="center"><a href="docs/ekran/harita.png"><img src="docs/ekran/harita.png" width="170" alt="Koyu temada hat güzergâhı ve canlı otobüsler"></a></td>
-    <td align="center"><a href="docs/ekran/durak.png"><img src="docs/ekran/durak.png" width="170" alt="Durak menüsü ve yaklaşan otobüsler"></a></td>
-    <td align="center"><a href="docs/ekran/cevrimdisi.png"><img src="docs/ekran/cevrimdisi.png" width="170" alt="Bağlantı yokken çevrimdışı tahmin kartı"></a></td>
-    <td align="center"><a href="docs/ekran/ayarlar.png"><img src="docs/ekran/ayarlar.png" width="170" alt="Tema, koyu harita ve çevrimdışı mod ayarları"></a></td>
-    <td align="center"><a href="docs/ekran/diger.png"><img src="docs/ekran/diger.png" width="170" alt="Duyurular, hatırlatmalar ve bağlantıların bulunduğu Diğer ekranı"></a></td>
+    <td align="center"><img src="docs/ekran/harita.png" width="170" alt="Açık temada H/1 hattının güzergâhı ve canlı otobüsler"></td>
+    <td align="center"><img src="docs/ekran/durak.png" width="170" alt="Durak menüsü ve yaklaşan otobüsler"></td>
+    <td align="center"><img src="docs/ekran/cevrimdisi.png" width="170" alt="Bağlantı yokken durakta çevrimdışı tahmin kartı"></td>
+    <td align="center"><img src="docs/ekran/ayarlar.png" width="170" alt="Tema, koyu harita ve çevrimdışı mod ayarları"></td>
+    <td align="center"><img src="docs/ekran/diger.png" width="170" alt="Ayarlar, duyurular, bildirimler ve bağlantıların bulunduğu Diğer ekranı"></td>
   </tr>
   <tr>
     <td align="center">Canlı otobüsler</td>
     <td align="center">Durak menüsü</td>
     <td align="center">Çevrimdışı tahmin</td>
-    <td align="center">Tema ve çevrimdışı ayarları</td>
-    <td align="center">Diğer ekranı</td>
+    <td align="center">Ayarlar</td>
+    <td align="center">Diğer</td>
   </tr>
 </table>
 
-## Özellikler
+## Neler yapabilirsin?
 
-- **Çevrimdışı mod (yeni, 1.2.0):** Bağlantı kötüyken sağ üstteki bulut düğmesi büyür; dokununca süreler tarifeden ve geçmiş ölçümlerden tahmin edilir. “Çevrimdışı tahmin” kartı bunu açıkça belirtir; tahmin otobüsün gerçek konumu değildir. Model küçük bir dosyadır, günde bir kez kendiliğinden güncellenir. Ayarlar > Çevrimdışı mod: Düğme (varsayılan), Otomatik, Kapalı.
-- **Koyu tema (yeni, 1.2.0):** Ayarlar > Tema: Sistem (varsayılan), Açık, Koyu (siyah zemin, sarı vurgu, gri yüzeyler). Koyu temada harita da koyulaşır; istersen “Koyu temada koyu harita” ayarını kapatıp haritayı açık bırakabilirsin.
-- **Canlı harita:** Hatları gidiş ve dönüş yönleriyle aynı anda 4 hatta kadar izle. Otobüs işaretleri aracın yönünü gösterir.
-- **Durak bilgileri:** Durağa dokunarak yaklaşan otobüsleri gör. “Sadece favorilerim” filtresiyle yalnızca favori hatlarını göster.
-- **Yakındaki duraklar:** Yakınındaki durakları ve bu duraklardan geçen hatları bul.
-- **Favoriler:** Hat, durak ve plaka kaydet; ana ekran widget'ını kullan.
-- **Yolculuk bilgileri:** İki durak arası yolculuk önerilerine, sefer saatlerine ve duyurulara bak.
-- **Bildirimler ve takip:** Bildirimler > Otobüs ekle ile durak ve yaklaşan otobüsü seç; kaç dakika kala uyarılacağını belirle. Açık bildirimde tahmin yenilenir, kaynağın bildirdiği son geçilen ve sıradaki duraklar görünür. Arka planda en çok iki saat takip et; Bildirimler > Takip bölümünden izle veya kaldır. Bilinmeyen süre için uyarı verilmez. Saatli okul ve iş hatırlatmaları da burada.
-- **Daha hafif harita:** Duraklar yalnız yakından küçük otobüs simgeleriyle görünür; şehir ölçeğinde gizlenir. Seçili durak ayrıca işaretlenir. Telefon konumu yaklaşık 30 saniye arayla sorgulanır.
-- **Ayarlar:** Durak/ışık payı, doğrudan otobüs takibi ve görünüm seçenekleri. Süre payları deneysel ve isteğe bağlıdır; [ölçüm notları](docs/eta-arastirma.md).
-- **Güncelleme:** Yeni GitHub sürümlerini günde bir kontrol eder; notları gösterir. İndir ve Kur düğmeleriyle Android yükleyicisini açabilir veya bir sürümü atlayabilirsin.
-- **Açık kaynak harita:** MapLibre, OpenFreeMap ve OpenStreetMap.
+- **Canlı harita:** En çok 4 hattı gidiş ve dönüş yönleriyle aynı anda izle.
+- **Durak bilgisi:** Durağa dokun, en yakın 3 otobüsü gör; kalabalık duraklarda gerisi "Tümünü göster" ile açılır. Uğrayan hatlar katlanır.
+- **Yakındaki duraklar:** Konumuna yakın durakları ve geçen hatları bul.
+- **Favoriler:** Hat, durak ve plaka kaydet; ana ekrana widget ekle.
+- **Bildirim ve takip:** Otobüs belirli dakikaya gelince uyarı al; okul ve iş hatırlatmaları kur.
+- **Çevrimdışı mod:** Bağlantı kötüyken süreler tarifeden ve geçmiş ölçümlerden tahmin edilir. Tahmin kartı bunu açıkça belirtir.
+- **Koyu tema:** Sistem, açık veya koyu; harita da koyulaşabilir.
+- **Güncelleme:** Yeni sürümleri günde bir kontrol eder.
+
+<details>
+<summary>Daha fazla ayrıntı</summary>
+
+- **Çevrimdışı mod:** Model küçük bir dosyadır ve günde bir kez kendiliğinden güncellenir. Ayarlar > Çevrimdışı mod: Düğme (varsayılan), Otomatik, Kapalı. Tahmin otobüsün gerçek konumu değildir.
+- **Koyu tema:** Ayarlar > Tema. “Koyu temada koyu harita” kapatılırsa harita açık kalır.
+- **Daha hafif harita:** Duraklar yalnız yakından görünür; şehir ölçeğinde gizlenir. Konum yaklaşık 30 saniyede bir sorgulanır.
+- **Bildirimler:** Bildirimler > Otobüs ekle ile durak ve otobüs seç. Arka planda en çok iki saat takip edilir. Süresi bilinmeyen otobüs için uyarı verilmez.
+- **Süre payları:** Durak ve ışık payı deneyseldir, isteğe bağlıdır. [Ölçüm notları](docs/eta-arastirma.md).
+- **Harita:** MapLibre, OpenFreeMap ve OpenStreetMap.
+
+</details>
 
 ## Kurulum
 
-1. [1.2.0 sürümünün APK dosyasını indir](https://github.com/uzaylikafasi/maras-ulasim/releases/tag/v1.2.0).
-2. İndirdiğin APK dosyasını aç.
-3. Android istediğinde, dosyayı açtığın uygulamaya “bilinmeyen kaynaklardan yükleme” izni ver ve kurulumu tamamla.
+1. [Son sürümün APK dosyasını indir](https://github.com/uzaylikafasi/maras-ulasim/releases/latest).
+2. APK dosyasını aç.
+3. Android sorarsa, dosyayı açtığın uygulamaya “bilinmeyen kaynaklardan yükleme” izni ver ve kurulumu bitir.
 
-Play Store dışından kurulum sırasında Play Protect uyarı gösterebilir. Android 8.0 ve üzeri gerekir.
+> [!NOTE]
+> Play Store dışından kurulumda Play Protect uyarı gösterebilir. Android 8.0 ve üzeri gerekir.
 
 ## Veri kaynağı
 
-Uygulama verileri [Maraş Ulaşım API](https://mithrixa.com/ulasim-api/docs)'sinden alır. API'nin kaynak kodu: [kahramankart-ulasim-api](https://github.com/uzaylikafasi/kahramankart-ulasim-api).
+Veriler [Maraş Ulaşım API](https://mithrixa.com/ulasim-api/docs)'sinden gelir. API'nin kaynak kodu: [kahramankart-ulasim-api](https://github.com/uzaylikafasi/kahramankart-ulasim-api).
 
-## Geliştirme ve derleme
+## Geliştirme
 
-Kullanılan teknolojiler: Kotlin, Jetpack Compose, MapLibre Native, OkHttp ve DataStore.
+Kotlin, Jetpack Compose, MapLibre Native, OkHttp ve DataStore kullanılır.
 
 ```sh
 ./gradlew :app:assembleDebug        # geliştirme sürümü
 ./gradlew :app:testDebugUnitTest    # birim testleri
 ```
 
+<details>
+<summary>İmzalı sürüm ve Raspberry Pi derlemesi</summary>
+
 Yayın imzası depoda yoktur. `~/.config/maras-ulasim-imza/signing.properties` dosyası (veya `MARAS_SIGNING` ortam değişkeni) varsa `assembleRelease` imzalı APK üretir. Raspberry Pi gibi ARM64 Linux makinelerde `./build-pi.sh` kullanılabilir.
+
+</details>
 
 ## Lisans
 
-Bu proje [MIT lisansı](LICENSE) ile sunulmaktadır. Üçüncü taraf lisansları için [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt) dosyasına bakabilirsin.
+[MIT lisansı](LICENSE). Üçüncü taraf lisansları: [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt).
