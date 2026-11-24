@@ -5,6 +5,7 @@ import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.HttpUrl
 import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
+import com.uzaylikafasi.marasulasim.LegacyTls.withLegacyRoots
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.Response
@@ -28,7 +29,7 @@ fun validatedApiKey(raw: String): String {
     return raw.trim()
 }
 
-class TransportApi(private val client: OkHttpClient = OkHttpClient.Builder()
+class TransportApi(private val client: OkHttpClient = OkHttpClient.Builder().withLegacyRoots()
     .connectTimeout(5, TimeUnit.SECONDS).readTimeout(15, TimeUnit.SECONDS)
     .callTimeout(20, TimeUnit.SECONDS).followRedirects(false).followSslRedirects(false)
     .retryOnConnectionFailure(false).build()) {

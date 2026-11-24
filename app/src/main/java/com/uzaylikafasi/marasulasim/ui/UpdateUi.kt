@@ -26,7 +26,7 @@ fun UpdatePrompt() {
     val error=state.error
     fun install() { file?.let { runCatching { updates.install(it) }.onFailure { vm.installFailed() } } }
     val installPermission = rememberLauncherForActivityResult(ActivityResultContracts.StartActivityForResult()) {
-        if(context.packageManager.canRequestPackageInstalls()) install() else vm.error("Kurulum izni verilmedi. İndirilen dosya bekliyor.")
+        if(canInstallPackages(context)) install() else vm.error("Kurulum izni verilmedi. İndirilen dosya bekliyor.")
     }
     release?.let { item -> AlertDialog(onDismissRequest={ vm.dismiss() },title={ Text("Yeni sürüm: ${item.version}") },text={
         Column(Modifier.heightIn(max=420.dp).verticalScroll(rememberScrollState()),verticalArrangement=Arrangement.spacedBy(10.dp)) {
@@ -39,7 +39,7 @@ fun UpdatePrompt() {
             Text("APK bu cihaz için seçilir. İndirdikten sonra Kur'a dokun; Android yükleyicisinde kurulumu onaylayabilirsin. Uygulama seçimi çıkarsa Paket yükleyici'yi seç.")
         }
     },confirmButton={ TextButton(enabled=!downloading,onClick={
-        if(file==null) vm.download() else if(context.packageManager.canRequestPackageInstalls()) install()
+        if(file==null) vm.download() else if(canInstallPackages(context)) install()
         else runCatching { installPermission.launch(Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,Uri.parse("package:${context.packageName}"))) }
             .onFailure { vm.error("Kurulum izni ekranı açılamadı.") }
     }) { Text(if(file==null) "İndir" else "Kur") } },dismissButton={ Row {
@@ -47,3 +47,7 @@ fun UpdatePrompt() {
         TextButton(enabled=!downloading,onClick={ vm.dismiss() }) { Text("Sonra") }
     } }) }
 }
+
+/** Android 8'den eski telefonlarda "bilinmeyen kaynak" izni sistem genelidir; uygulama başına sorulmaz, Android yükleyicisi uyarır. */
+internal fun canInstallPackages(context: android.content.Context): Boolean =
+    android.os.Build.VERSION.SDK_INT < 26 || context.packageManager.canRequestPackageInstalls()

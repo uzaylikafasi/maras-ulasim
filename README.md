@@ -17,7 +17,7 @@
 
 <p align="center">
   <img src="https://img.shields.io/github/v/release/uzaylikafasi/maras-ulasim?color=2563EB&label=s%C3%BCr%C3%BCm" alt="Son sürüm">
-  <img src="https://img.shields.io/badge/Android-8.0%2B-2563EB" alt="Android 8.0 ve üzeri">
+  <img src="https://img.shields.io/badge/Android-6.0%2B-2563EB" alt="Android 6.0 ve üzeri">
   <a href="LICENSE"><img src="https://img.shields.io/badge/lisans-MIT-2563EB" alt="MIT lisansı"></a>
 </p>
 
@@ -79,12 +79,18 @@ Kahramanmaraş'ta otobüs saatini öğrenmek için kullanılan mevcut uygulama b
 
 ## Kurulum
 
-1. [Son sürümün APK dosyasını indir](https://github.com/uzaylikafasi/maras-ulasim/releases/latest).
+1. [Son sürümün sayfasını aç](https://github.com/uzaylikafasi/maras-ulasim/releases/latest) ve telefonuna uyan APK'yı indir:
+
+   | Telefonun | İndirilecek dosya |
+   |---|---|
+   | Android 8.0 ve üzeri (çoğu telefon) | `maras-ulasim-vX.Y.Z-arm64.apk`; açılmazsa `maras-ulasim-vX.Y.Z.apk` |
+   | **Android 6.0 ve 7.x (eski telefon, ör. Galaxy J7)** | **`maras-ulasim-vX.Y.Z-android6.apk`** |
+
 2. APK dosyasını aç.
 3. Android sorarsa, dosyayı açtığın uygulamaya “bilinmeyen kaynaklardan yükleme” izni ver ve kurulumu bitir.
 
 > [!NOTE]
-> Play Store dışından kurulumda Play Protect uyarı gösterebilir. Android 8.0 ve üzeri gerekir.
+> Android 6 APK'sı ayrı bir dosyadır; normal APK Android 8.0 ister ve eski telefona kurulmaz. Android 8 ve üzerinde `-android6` dosyasını kullanma. Play Store dışından kurulumda Play Protect uyarı gösterebilir. Android 6 APK'sı henüz gerçek bir Android 6 cihazında denenmedi.
 
 ## Nasıl kullanılır?
 
@@ -142,12 +148,13 @@ surumler/      Raspberry Pi'de derlenmiş APK'lar
 ```sh
 ./gradlew :app:assembleDebug        # geliştirme sürümü
 ./gradlew :app:testDebugUnitTest    # birim testleri
+./gradlew :app:assembleRelease -Peski=true   # Android 6.0+ için ayrı APK (minSdk 23)
 ```
 
 <details>
 <summary>İmzalı sürüm ve Raspberry Pi derlemesi</summary>
 
-Yayın imzası depoda yoktur. `~/.config/maras-ulasim-imza/signing.properties` dosyası (veya `MARAS_SIGNING` ortam değişkeni) varsa `assembleRelease` imzalı APK üretir. Raspberry Pi gibi ARM64 Linux makinelerde `./build-pi.sh` kullanılabilir.
+Yayın imzası depoda yoktur. `~/.config/maras-ulasim-imza/signing.properties` dosyası (veya `MARAS_SIGNING` ortam değişkeni) varsa `assembleRelease` imzalı APK üretir. Raspberry Pi gibi ARM64 Linux makinelerde `./build-pi.sh` kullanılabilir. `-Peski=true` ile derlenen APK `maras-ulasim-vX.Y.Z-android6.apk` adıyla yayına eklenir; uygulama kendini güncellerken kendi türünün dosyasını seçer.
 
 </details>
 

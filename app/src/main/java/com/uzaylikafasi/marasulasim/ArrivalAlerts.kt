@@ -107,6 +107,7 @@ object ArrivalAlerts {
         c.getSystemService(NotificationManager::class.java).cancel(id,0)
     }
     fun channels(c: Context) {
+        if(Build.VERSION.SDK_INT<26) return // Bildirim kanalı Android 8'de geldi
         c.getSystemService(NotificationManager::class.java).apply {
             createNotificationChannel(NotificationChannel(CHANNEL,"Otobüs varış uyarıları",NotificationManager.IMPORTANCE_DEFAULT))
             createNotificationChannel(NotificationChannel(SERVICE_CHANNEL,"Otobüs takibi",NotificationManager.IMPORTANCE_LOW))
@@ -115,16 +116,17 @@ object ArrivalAlerts {
     fun enabled(c: Context): Boolean {
         channels(c)
         return (Build.VERSION.SDK_INT<33 || c.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)==PackageManager.PERMISSION_GRANTED) &&
-            c.getSystemService(NotificationManager::class.java).areNotificationsEnabled() &&
-            c.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL).importance != NotificationManager.IMPORTANCE_NONE &&
-            c.getSystemService(NotificationManager::class.java).getNotificationChannel(SERVICE_CHANNEL).importance != NotificationManager.IMPORTANCE_NONE
+            androidx.core.app.NotificationManagerCompat.from(c).areNotificationsEnabled() &&
+            (Build.VERSION.SDK_INT<26 || (c.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL).importance != NotificationManager.IMPORTANCE_NONE &&
+            c.getSystemService(NotificationManager::class.java).getNotificationChannel(SERVICE_CHANNEL).importance != NotificationManager.IMPORTANCE_NONE))
     }
-    fun start(c: Context) { c.startForegroundService(Intent(c,ArrivalTrackingService::class.java)) }
+    fun start(c: Context) { androidx.core.content.ContextCompat.startForegroundService(c,Intent(c,ArrivalTrackingService::class.java)) }
     fun open(c: Context): PendingIntent = PendingIntent.getActivity(c,1100,
         Intent(c,MainActivity::class.java).putExtra("show_tracking",true).addFlags(Intent.FLAG_ACTIVITY_SINGLE_TOP),PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
     fun notification(c: Context, title: String, text: String, ongoing: Boolean = false): Notification =
-        Notification.Builder(c,if(ongoing) SERVICE_CHANNEL else CHANNEL).setSmallIcon(R.drawable.ic_stat_bus)
-            .setContentTitle(title).setContentText(text).setStyle(Notification.BigTextStyle().bigText(text))
+        androidx.core.app.NotificationCompat.Builder(c,if(ongoing) SERVICE_CHANNEL else CHANNEL).setSmallIcon(R.drawable.ic_stat_bus)
+            .setPriority(if(ongoing) androidx.core.app.NotificationCompat.PRIORITY_LOW else androidx.core.app.NotificationCompat.PRIORITY_DEFAULT)
+            .setContentTitle(title).setContentText(text).setStyle(androidx.core.app.NotificationCompat.BigTextStyle().bigText(text))
             .setContentIntent(open(c)).setOngoing(ongoing).setOnlyAlertOnce(true).setAutoCancel(!ongoing).build()
 }
 
@@ -185,9 +187,9 @@ class ArrivalTrackingService : Service() {
         } finally {
             if(wake?.isHeld==true) wake?.release()
             ArrivalAlerts.list(this).filter { it.active }.forEach { ArrivalAlerts.update(this,it.copy(active=false,status="Takip durdu; yeniden uyarı kurabilirsin")) }
-            stopForeground(STOP_FOREGROUND_REMOVE); stopSelf()
+            androidx.core.app.ServiceCompat.stopForeground(this,androidx.core.app.ServiceCompat.STOP_FOREGROUND_REMOVE); stopSelf()
         }
     }
-    override fun onTimeout(startId: Int, fgsType: Int) { job?.cancel(); stopForeground(STOP_FOREGROUND_REMOVE); stopSelf() }
+    override fun onTimeout(startId: Int, fgsType: Int) { job?.cancel(); androidx.core.app.ServiceCompat.stopForeground(this,androidx.core.app.ServiceCompat.STOP_FOREGROUND_REMOVE); stopSelf() }
     override fun onDestroy() { scope.cancel(); if(wake?.isHeld==true) wake?.release(); super.onDestroy() }
 }

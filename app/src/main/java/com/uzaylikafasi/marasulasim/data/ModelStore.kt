@@ -5,8 +5,6 @@ import java.io.ByteArrayInputStream
 import java.io.File
 import java.io.FileOutputStream
 import java.io.InputStream
-import java.nio.file.Files
-import java.nio.file.StandardCopyOption
 import java.security.MessageDigest
 import java.time.Instant
 import java.util.zip.GZIPInputStream
@@ -114,7 +112,8 @@ class ModelStore(private val dir: File, private val openSeed: () -> InputStream?
         val tmp = File(dir, target.name + ".tmp")
         try {
             FileOutputStream(tmp).use { it.write(bytes); it.flush(); it.fd.sync() }
-            Files.move(tmp.toPath(), target.toPath(), StandardCopyOption.ATOMIC_MOVE, StandardCopyOption.REPLACE_EXISTING)
+            // rename(2) aynı dizinde atomiktir ve var olan dosyanın yerine geçer; java.nio.file Android 8'den eskide yoktur
+            if (!tmp.renameTo(target)) throw java.io.IOException("Dosya yerleştirilemedi: ${target.name}")
         } finally { if (tmp.exists()) tmp.delete() }
     }
 }

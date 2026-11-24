@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 8'den eski telefonlar için: uyarlanabilir simge yerine düz katman simgesi (8+ mipmap-anydpi-v26 kullanır) -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:drawable="@color/ic_launcher_background" />
+    <item android:drawable="@drawable/ic_launcher_foreground" android:top="-12dp" android:bottom="-12dp" android:left="-12dp" android:right="-12dp" />
+</layer-list>

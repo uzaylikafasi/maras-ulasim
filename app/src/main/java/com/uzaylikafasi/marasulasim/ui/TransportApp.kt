@@ -1127,7 +1127,7 @@ private fun ReminderDialog(onDismiss: () -> Unit) {
                     else -> save(item)
                 }
             }, enabled = title.isNotBlank() && days.isNotEmpty(), modifier = Modifier.fillMaxWidth()) { Text("Hatırlatma ekle") }
-            TextButton(onClick = { context.startActivity(Intent(AndroidSettings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(AndroidSettings.EXTRA_APP_PACKAGE, context.packageName)) }) { Text("Bildirim ayarlarını aç") }
+            TextButton(onClick = { openNotificationSettings(context) }) { Text("Bildirim ayarlarını aç") }
         }
     }
 }

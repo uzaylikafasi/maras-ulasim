@@ -6,6 +6,9 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class AppUpdatesTest {
+    // Normal (Android 8+) APK seçimi sınanır; Android 6 seçimi LegacyAndroidTest'te. -Peski derlemesinde de aynı sonuç.
+    private fun normalRelease(o: JSONObject, installed: String, abis: List<String>, skipped: String?, force: Boolean = false) =
+        parseRelease(o, installed, abis, skipped, force, legacy = false)
     private fun fixture():JSONObject {
         val version="1.1.0"
         return JSONObject().put("tag_name","v$version").put("body","Sürüm notları").put("assets",JSONArray(listOf("maras-ulasim-v$version-arm64.apk","maras-ulasim-v$version.apk").map {
@@ -18,26 +21,26 @@ class AppUpdatesTest {
         assertFalse(newerVersion("1.1.0-beta","1.0.1"));assertFalse(newerVersion("99999999999.1.0","1.0.1"))
     }
     @Test fun matchesAbiAndSkipsInstalledOrSkippedVersions() {
-        assertTrue(parseRelease(fixture(),"1.0.1",listOf("arm64-v8a","armeabi-v7a"),null)!!.url.endsWith("-arm64.apk"))
-        assertTrue(parseRelease(fixture(),"1.0.1",listOf("armeabi-v7a"),null)!!.url.endsWith("v1.1.0.apk"))
-        assertNull(parseRelease(fixture(),"1.1.0",listOf("arm64-v8a"),null))
-        assertNull(parseRelease(fixture(),"1.0.1",listOf("arm64-v8a"),"1.1.0"))
-        assertNull(parseRelease(fixture().put("prerelease",true),"1.0.1",emptyList(),null))
-        assertNull(parseRelease(fixture().put("draft",true),"1.0.1",emptyList(),null))
+        assertTrue(normalRelease(fixture(),"1.0.1",listOf("arm64-v8a","armeabi-v7a"),null)!!.url.endsWith("-arm64.apk"))
+        assertTrue(normalRelease(fixture(),"1.0.1",listOf("armeabi-v7a"),null)!!.url.endsWith("v1.1.0.apk"))
+        assertNull(normalRelease(fixture(),"1.1.0",listOf("arm64-v8a"),null))
+        assertNull(normalRelease(fixture(),"1.0.1",listOf("arm64-v8a"),"1.1.0"))
+        assertNull(normalRelease(fixture().put("prerelease",true),"1.0.1",emptyList(),null))
+        assertNull(normalRelease(fixture().put("draft",true),"1.0.1",emptyList(),null))
     }
     @Test fun forcedCheckIgnoresSkippedVersionButStillRequiresNewerValidRelease() {
-        assertNotNull(parseRelease(fixture(),"1.0.1",listOf("arm64-v8a"),"1.1.0",force=true))
-        assertNull(parseRelease(fixture(),"1.1.0",listOf("arm64-v8a"),"1.1.0",force=true))
-        assertNull(parseRelease(fixture().put("prerelease",true),"1.0.1",emptyList(),"1.1.0",force=true))
+        assertNotNull(normalRelease(fixture(),"1.0.1",listOf("arm64-v8a"),"1.1.0",force=true))
+        assertNull(normalRelease(fixture(),"1.1.0",listOf("arm64-v8a"),"1.1.0",force=true))
+        assertNull(normalRelease(fixture().put("prerelease",true),"1.0.1",emptyList(),"1.1.0",force=true))
         val bad=fixture(); bad.getJSONArray("assets").getJSONObject(0).put("browser_download_url","https://example.org/evil.apk")
-        assertNull(parseRelease(bad,"1.0.1",listOf("arm64-v8a"),"1.1.0",force=true))
+        assertNull(normalRelease(bad,"1.0.1",listOf("arm64-v8a"),"1.1.0",force=true))
     }
     @Test fun rejectsUnexpectedUrlsAndMissingOrOversizedApks() {
         val bad=fixture(); bad.getJSONArray("assets").getJSONObject(0).put("browser_download_url","https://example.org/evil.apk")
-        assertNull(parseRelease(bad,"1.0.1",listOf("arm64-v8a"),null))
-        assertNull(parseRelease(fixture().put("assets",JSONArray()),"1.0.1",emptyList(),null))
+        assertNull(normalRelease(bad,"1.0.1",listOf("arm64-v8a"),null))
+        assertNull(normalRelease(fixture().put("assets",JSONArray()),"1.0.1",emptyList(),null))
         val large=fixture();large.getJSONArray("assets").getJSONObject(0).put("size",100_000_001L)
-        assertNull(parseRelease(large,"1.0.1",listOf("arm64-v8a"),null))
+        assertNull(normalRelease(large,"1.0.1",listOf("arm64-v8a"),null))
     }
     @Test fun sixHourGateIncludesBoundaryAndClockRollback() {
         assertEquals(21_600_000L,UPDATE_CHECK_INTERVAL_MS)
@@ -48,7 +51,7 @@ class AppUpdatesTest {
     }
     @Test fun arm64FallsBackToUniversalAndPreservesReleaseNotes() {
         val o=fixture();o.getJSONArray("assets").remove(0)
-        val release=parseRelease(o,"1.0.1",listOf("arm64-v8a"),null)!!
+        val release=normalRelease(o,"1.0.1",listOf("arm64-v8a"),null)!!
         assertTrue(release.url.endsWith("v1.1.0.apk"));assertEquals("Sürüm notları",release.notes)
     }
 }

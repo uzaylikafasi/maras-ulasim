@@ -10,12 +10,15 @@ plugins {
     id("org.jetbrains.kotlin.plugin.compose")
 }
 
+// Android 6 (API 23) için ayrı APK: ./gradlew :app:assembleRelease -Peski=true  (normal sürüm Android 8+ kalır)
+val eski = providers.gradleProperty("eski").orNull == "true"
+
 android {
     namespace = "com.uzaylikafasi.marasulasim"
     compileSdk = 35
     defaultConfig {
         applicationId = "com.uzaylikafasi.marasulasim"
-        minSdk = 26
+        minSdk = if (eski) 23 else 26
         targetSdk = 35
         versionCode = 14
         versionName = "1.2.1"
@@ -36,9 +39,11 @@ android {
         release { isMinifyEnabled = false; signingConfig = signingConfigs.findByName("release") }
     }
     buildFeatures { compose = true; buildConfig = true }
+    defaultConfig { buildConfigField("boolean", "ESKI_ANDROID", eski.toString()) }
     compileOptions {
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
+        isCoreLibraryDesugaringEnabled = eski // Android 6'da java.time için
     }
     kotlinOptions { jvmTarget = "17" }
     packaging { resources.excludes += "/META-INF/{AL2.0,LGPL2.1}" }
@@ -48,6 +53,7 @@ android {
 }
 
 dependencies {
+    if (eski) coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.5")
     implementation(platform("androidx.compose:compose-bom:2025.08.01"))
     implementation("androidx.activity:activity-compose:1.10.1")
     implementation("androidx.compose.material3:material3")

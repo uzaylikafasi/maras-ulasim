@@ -70,7 +70,11 @@ class TransportViewModel(application: Application) : AndroidViewModel(applicatio
     init {
         connectivity?.let { cm ->
             runCatching { evaluate(cm.activeNetwork?.let(cm::getNetworkCapabilities)) }
-            runCatching { cm.registerDefaultNetworkCallback(netCallback) }
+            runCatching {
+                if (android.os.Build.VERSION.SDK_INT >= 24) cm.registerDefaultNetworkCallback(netCallback)
+                else cm.registerNetworkCallback(android.net.NetworkRequest.Builder()
+                    .addCapability(android.net.NetworkCapabilities.NET_CAPABILITY_INTERNET).build(), netCallback)
+            }
         }
     }
     override fun onCleared() { runCatching { connectivity?.unregisterNetworkCallback(netCallback) } }

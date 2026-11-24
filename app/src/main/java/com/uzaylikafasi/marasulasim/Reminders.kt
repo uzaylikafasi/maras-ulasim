@@ -8,6 +8,7 @@ import android.os.Build
 import com.uzaylikafasi.marasulasim.data.*
 import org.json.JSONArray
 import org.json.JSONObject
+import androidx.core.app.NotificationCompat
 import java.time.*
 import java.util.UUID
 
@@ -54,18 +55,19 @@ object Reminders {
             AlarmManager.RTC_WAKEUP, next.toInstant().toEpochMilli(), pending(context, reminder.id))
     }
     fun channel(context: Context) {
+        if (Build.VERSION.SDK_INT < 26) return // Bildirim kanalı Android 8'de geldi; eskide kanal yok
         context.getSystemService(NotificationManager::class.java).createNotificationChannel(
             NotificationChannel(CHANNEL, "Yolculuk hatırlatmaları", NotificationManager.IMPORTANCE_DEFAULT))
     }
-    fun enabled(context: Context): Boolean = context.getSystemService(NotificationManager::class.java).areNotificationsEnabled() &&
-        context.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE &&
+    fun enabled(context: Context): Boolean = androidx.core.app.NotificationManagerCompat.from(context).areNotificationsEnabled() &&
+        (Build.VERSION.SDK_INT < 26 || context.getSystemService(NotificationManager::class.java).getNotificationChannel(CHANNEL)?.importance != NotificationManager.IMPORTANCE_NONE) &&
         (Build.VERSION.SDK_INT < 33 || context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) == PackageManager.PERMISSION_GRANTED)
     fun show(context: Context, reminder: Reminder) {
         if (!enabled(context)) return
         channel(context)
         val open = PendingIntent.getActivity(context, 0, Intent(context, MainActivity::class.java),
             PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE)
-        val notification = Notification.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_stat_bus).setColor(0xFF007B83.toInt())
+        val notification = NotificationCompat.Builder(context, CHANNEL).setSmallIcon(R.drawable.ic_stat_bus).setColor(0xFF007B83.toInt())
             .setContentTitle(reminder.title).setContentText("Çıkmadan önce hat ve sefer bilgilerini kontrol et.")
             .setContentIntent(open).setAutoCancel(true).build()
         context.getSystemService(NotificationManager::class.java).notify(reminder.id.hashCode(), notification)

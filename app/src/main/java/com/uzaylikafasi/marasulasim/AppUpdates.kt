@@ -11,6 +11,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.ensureActive
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import com.uzaylikafasi.marasulasim.LegacyTls.withLegacyRoots
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import org.json.JSONObject
@@ -38,15 +39,16 @@ sealed class UpdateCheckResult {
     object NotChecked : UpdateCheckResult()
 }
 
-fun parseRelease(o: JSONObject, installed: String, abis: List<String>, skipped: String?, force: Boolean = false): AppRelease? {
+fun parseRelease(o: JSONObject, installed: String, abis: List<String>, skipped: String?, force: Boolean = false, legacy: Boolean = BuildConfig.ESKI_ANDROID): AppRelease? {
     if(o.optBoolean("draft") || o.optBoolean("prerelease")) return null
     val tag = o.optString("tag_name"); val version = tag.removePrefix("v")
     if(!newerVersion(version,installed) || (!force && version==skipped)) return null
     val assets = o.optJSONArray("assets") ?: return null
-    val preferred = if("arm64-v8a" in abis) "maras-ulasim-v$version-arm64.apk" else "maras-ulasim-v$version.apk"
+    // Android 6 sürümü ayrı APK'dır; normal APK Android 8+ ister ve eski telefona kurulmaz.
+    val preferred = if(legacy) "maras-ulasim-v$version-android6.apk" else if("arm64-v8a" in abis) "maras-ulasim-v$version-arm64.apk" else "maras-ulasim-v$version.apk"
     val all = (0 until assets.length()).map { assets.getJSONObject(it) }
     val asset = all.firstOrNull { it.optString("name")==preferred }
-        ?: all.firstOrNull { it.optString("name")=="maras-ulasim-v$version.apk" } ?: return null
+        ?: (if(legacy) null else all.firstOrNull { it.optString("name")=="maras-ulasim-v$version.apk" }) ?: return null
     val url = asset.optString("browser_download_url")
     if(url != "$DOWNLOAD_PREFIX$tag/${asset.optString("name")}") return null
     val size = asset.optLong("size")
@@ -56,7 +58,7 @@ fun parseRelease(o: JSONObject, installed: String, abis: List<String>, skipped: 
 
 class AppUpdates(private val context: Context) {
     private val prefs = context.getSharedPreferences("app-updates",Context.MODE_PRIVATE)
-    private val client = OkHttpClient.Builder().connectTimeout(10,TimeUnit.SECONDS).readTimeout(30,TimeUnit.SECONDS)
+    private val client = OkHttpClient.Builder().withLegacyRoots().connectTimeout(10,TimeUnit.SECONDS).readTimeout(30,TimeUnit.SECONDS)
         .callTimeout(5,TimeUnit.MINUTES).addNetworkInterceptor { chain ->
             val url = chain.request().url
             require(url.isHttps && (url.host in setOf("api.github.com","github.com","release-assets.githubusercontent.com","objects.githubusercontent.com")))

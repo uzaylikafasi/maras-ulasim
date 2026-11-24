@@ -42,7 +42,7 @@ fun ArrivalAlertDialog(stop: Stop, arrival: Arrival, onDismiss: () -> Unit) {
         OutlinedTextField(value=minutes,onValueChange={ minutes=it.filter(Char::isDigit).take(2) },label={ Text("Kaç dakika kala? (1–60)") },singleLine=true,keyboardOptions=androidx.compose.foundation.text.KeyboardOptions(keyboardType=androidx.compose.ui.text.input.KeyboardType.Number))
         Text("Kaynak tahmini bu süreye indiğinde bir kez bildirilir. Süre bilinmiyorsa beklenir. Takip en çok 2 saat sürer; Bildirimler > Takip'ten kaldırabilirsin.")
         error?.let { Text(it,color=MaterialTheme.colorScheme.error)
-            TextButton(onClick={ context.startActivity(Intent(Settings.ACTION_APP_NOTIFICATION_SETTINGS).putExtra(Settings.EXTRA_APP_PACKAGE,context.packageName)) }) { Text("Bildirim ayarları") }
+            TextButton(onClick={ openNotificationSettings(context) }) { Text("Bildirim ayarları") }
         }
     } },confirmButton={ TextButton(enabled=(minutes.toIntOrNull() ?: 0) in 1..60 && arrival.plate.isNotBlank() && arrival.lineId.toLongOrNull()!=null,onClick={
         if(Build.VERSION.SDK_INT>=33 && context.checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)!=PackageManager.PERMISSION_GRANTED)
